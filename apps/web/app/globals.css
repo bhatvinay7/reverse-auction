@@ -1,50 +1,38 @@
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-zinc-50: #f4f5f7; /* Very light gray */
+  --color-cream: #fdfbf7; /* Light cream */
 }
 
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: var(--color-zinc-50);
+    --foreground: #18181B; /* zinc-900 */
+    --card: var(--color-cream);
+    --border: #E4E4E7; /* zinc-200 */
+    --accent: #4F46E5; /* indigo-600 */
+  }
+
+  .dark {
+    --background: #18181B; /* zinc-900 */
+    --foreground: #F4F4F5; /* zinc-100 */
+    --card: #18181B; /* zinc-900 */
+    --border: #27272A; /* zinc-800 */
+    --accent: #818CF8; /* indigo-400 */
   }
 }
 
-html,
 body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
-
-body {
+  background-color: var(--background);
   color: var(--foreground);
-  background: var(--background);
+  font-family: 'Inter', sans-serif; /* or geist if loaded */
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.imgDark {
-  display: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
-
-  .imgLight {
-    display: none;
-  }
-  .imgDark {
-    display: unset;
-  }
+/* Base custom classes if needed */
+.printed-card {
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05); /* very soft shadow */
 }
