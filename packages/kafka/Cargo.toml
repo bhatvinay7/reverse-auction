@@ -1,0 +1,10 @@
+[package]
+name = "auction-kafka"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+base64 = "0.22.1"
+dotenvy = "0.15.7"
+rdkafka = { version = "0.38.0", features = ["cmake-build", "ssl", "libz"] }
+tokio = { version = "1.52.3", features = ["time"] }

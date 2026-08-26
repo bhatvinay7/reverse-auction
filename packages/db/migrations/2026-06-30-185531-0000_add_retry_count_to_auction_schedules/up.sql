@@ -1,0 +1,1 @@
+ALTER TABLE auction_schedules ADD COLUMN IF NOT EXISTS retry_count INT NOT NULL DEFAULT 0;

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+auction-observability = { path = "../../packages/observability" }
 chrono = "0.4.45"
 diesel = { version = "2.3.10", features = ["postgres", "chrono", "r2d2", "uuid"] }
 dotenvy = "0.15.7"
@@ -13,10 +14,8 @@ tokio = { version = "1.52.3", features = ["full"] }
 uuid = "1.23.4"
 
 db = { path = "../../packages/db" }
-rabbitmq = { path = "../../packages/rabbitmq" }
 auction-redis = { path = "../../packages/redis" }
 futures-util = "0.3.32"
-lapin = "4.10.0"
 redis = "1.3.0"
 bb8 = "0.9.1"
 bb8-redis = "0.26.0"

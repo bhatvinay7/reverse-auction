@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package bid;
+
+service BidService {
+    rpc PlaceBid (PlaceBidRequest) returns (PlaceBidResponse);
+}
+
+message PlaceBidRequest {
+    string auction_id = 1;
+    double bid = 2;
+    string user_id = 3;
+    int64 bid_time = 4;
+    string username = 5;
+    string request_id = 6;
+}
+
+message PlaceBidResponse {
+    bool successful = 1;
+    string state = 2;
+    string error = 3;
+}

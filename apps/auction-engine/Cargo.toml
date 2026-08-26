@@ -2,15 +2,23 @@
 name = "auction-engine"
 version = "0.1.0"
 edition = "2024"
+autobins = false
+
+[[bin]]
+name = "auction-engine"
+path = "src/bin/auction_engine.rs"
 
 [dependencies]
-
 db = { version = "0.1.0", path = "../../packages/db" }
-rabbitmq = { path = "../../packages/rabbitmq" }
+auction-kafka = { path = "../../packages/kafka" }
+auction-observability = { path = "../../packages/observability" }
 auction-redis = { path = "../../packages/redis" }
+grpc-client = { version = "0.1.0", path = "../../packages/grpc-client" }
+tonic = "0.12.3"
+prost = "0.13.5"
 futures-util = "0.3.32"
 tokio = { version = "1.52.3", features = ["full"] }
-lapin = "4.10.0"
+rdkafka = { version = "0.38.0", features = ["cmake-build", "ssl", "libz"] }
 redis = "1.3.0"
 serde_json = "1.0.150"
 dotenvy = "0.15.7"
@@ -21,5 +29,5 @@ dashmap = "6.2.1"
 serde = { version = "1.0.228", features = ["derive"] }
 socketioxide-emitter = "0.1.0"
 bb8 = "0.9.1"
-bb8-lapin = "0.8.1"
 bb8-redis = "0.26.0"
+tracing = "0.1"

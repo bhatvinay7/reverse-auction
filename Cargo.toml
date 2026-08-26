@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "packages/db",
+    "apps/http-server",
+    "packages/kafka",
+    "packages/observability",
+    "packages/redis",
+    "apps/scheduler",
+    "apps/auction-engine",
+    "apps/grpc",
+    "apps/ws-server",
+    "packages/grpc-client",
+    "apps/notification-worker",
+    "apps/gateway-keeper",
+]
+resolver = "2"

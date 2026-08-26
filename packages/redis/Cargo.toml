@@ -1,0 +1,12 @@
+[package]
+name = "auction-redis"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+redis = { version = "1.3.0", features = ["connection-manager", "tokio-rustls-comp"] }
+rustls = { version = "0.23.41", default-features = false, features = ["ring", "std"] }
+tokio = "1.52.3"
+dotenvy = "0.15"
+bb8 = "0.9.1"
+bb8-redis = "0.26.0"

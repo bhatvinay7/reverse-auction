@@ -1,0 +1,26 @@
+[package]
+name = "grpc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+grpc-client   = { version = "0.1.0", path = "../../packages/grpc-client" }
+prost         = "0.13.5"
+redis         = { version = "0.26", features = ["tokio-comp"] }
+serde_json    = "1.0.150"
+tokio         = { version = "1.52.3", features = ["full"] }
+tonic         = "0.12.3"
+axum          = "0.7"
+tower         = "0.4"
+auction-redis = { path = "../../packages/redis" }
+auction-kafka = { path = "../../packages/kafka" }
+auction-observability = { path = "../../packages/observability" }
+rdkafka       = { version = "0.38.0", features = ["cmake-build", "ssl", "libz"] }
+dashmap       = "6"
+bb8           = "0.9.1"
+bb8-redis     = "0.26.0"
+serde         = { version = "1.0", features = ["derive"] }
+uuid          = { version = "1", features = ["v4", "serde"] }
+dotenvy       = "0.15.7"
+chrono        = "0.4.45"
+tracing       = "0.1"

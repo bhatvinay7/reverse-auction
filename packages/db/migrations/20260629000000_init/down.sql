@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS auction_schedules;
+DROP TABLE IF EXISTS media;
+DROP TABLE IF EXISTS bids;
+DROP TABLE IF EXISTS shipments;
+DROP TABLE IF EXISTS users;
+
+DROP TYPE IF EXISTS schedule_state;
+DROP TYPE IF EXISTS freight_type;
+DROP TYPE IF EXISTS auction_status;
+DROP TYPE IF EXISTS role;

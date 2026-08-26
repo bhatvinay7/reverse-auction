@@ -1,0 +1,269 @@
+name: auction-test
+
+x-service-environment: &service-environment
+  KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka-20d2257f-bookit.d.aivencloud.com:26733}
+  KAFKA_SECURITY_PROTOCOL: ${KAFKA_SECURITY_PROTOCOL:-SASL_SSL}
+  KAFKA_SASL_MECHANISM: ${KAFKA_SASL_MECHANISM:-PLAIN}
+  KAFKA_USERNAME: ${KAFKA_USERNAME:-avnadmin}
+  KAFKA_PASSWORD: ${KAFKA_PASSWORD:?set KAFKA_PASSWORD for Aiven Kafka}
+  KAFKA_SSL_CA_BASE64: ${KAFKA_SSL_CA_BASE64:?set KAFKA_SSL_CA_BASE64 to the base64-encoded Kafka CA}
+  KAFKA_REPLICATION_FACTOR: "2"
+  KAFKA_BID_PARTITIONS: "2"
+  KAFKA_BACKGROUND_PARTITIONS: "2"
+  KAFKA_BID_RETENTION_MS: "259200000"
+  KAFKA_DECISION_RETENTION_MS: "259200000"
+  KAFKA_NOTIFICATION_RETENTION_MS: "259200000"
+  KAFKA_SYNC_RETENTION_MS: "259200000"
+  KAFKA_DLQ_RETENTION_MS: "259200000"
+  JWT_SECRET: test-only-jwt-secret-with-at-least-32-bytes
+  RUST_LOG: info
+
+x-app-defaults: &app-defaults
+  restart: on-failure:3
+  networks:
+    - auction-test
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 128
+
+services:
+  # postgres: disabled; DATABASE_URL points to cloud Postgres.
+
+  # redis: disabled; REDIS_URL points to cloud Redis.
+
+  # kafka:
+  #   image: apache/kafka:3.8.0
+  #   restart: unless-stopped
+  #   environment:
+  #     KAFKA_NODE_ID: "1"
+  #     KAFKA_PROCESS_ROLES: broker,controller
+  #     KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+  #     KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9093,EXTERNAL://:9092
+  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:19092,EXTERNAL://localhost:9092
+  #     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+  #     KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+  #     KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+  #     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+  #     KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+  #     KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+  #     KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+  #     KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+  #     KAFKA_LOG_RETENTION_HOURS: "168"
+  #     KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+  #     CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+  #   ports:
+  #     - "127.0.0.1:9092:9092"
+  #   volumes:
+  #     - auction-test-kafka:/var/lib/kafka/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --list >/dev/null 2>&1"]
+  #     interval: 8s
+  #     timeout: 5s
+  #     retries: 20
+  #   cpus: 0.75
+  #   mem_limit: 768m
+  #   mem_reservation: 384m
+  #   pids_limit: 192
+  #   networks:
+  #     - auction-test
+
+  # kafka-init:
+  #   image: apache/kafka:3.8.0
+  #   restart: "no"
+  #   depends_on:
+  #     kafka:
+  #       condition: service_healthy
+  #   command:
+  #     - /bin/bash
+  #     - -ec
+  #     - |
+  #       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic auction-bids --partitions 16 --replication-factor 1 --config retention.ms=2592000000
+  #       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic auction-bid-decisions --partitions 4 --replication-factor 1 --config retention.ms=7776000000
+  #       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic auction-notifications --partitions 4 --replication-factor 1 --config retention.ms=604800000
+  #       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic auction-sync --partitions 4 --replication-factor 1 --config retention.ms=2592000000
+  #       /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:19092 --create --if-not-exists --topic auction-dlq --partitions 4 --replication-factor 1 --config retention.ms=7776000000
+  #   cpus: 0.10
+  #   mem_limit: 128m
+  #   mem_reservation: 64m
+  #   pids_limit: 64
+  #   networks:
+  #     - auction-test
+
+  grpc:
+    <<: *app-defaults
+    env_file:
+      - .env
+      - apps/grpc/.env
+    build:
+      context: .
+      dockerfile: apps/grpc/Dockerfile
+      args:
+        DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the cloud Postgres URL}
+        REDIS_URL: ${REDIS_URL:?set REDIS_URL to the cloud Redis URL}
+    environment:
+      <<: *service-environment
+      PORT: "50051"
+      HTTP_PORT: "8083"
+    ports:
+      - "50051:50051"
+      - "8083:8083"
+    cpus: 0.35
+    mem_limit: 192m
+    mem_reservation: 96m
+
+  auction-engine:
+    <<: *app-defaults
+    env_file:
+      - .env
+      - apps/auction-engine/.env
+    build:
+      context: .
+      dockerfile: apps/auction-engine/Dockerfile
+      args:
+        DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the cloud Postgres URL}
+        REDIS_URL: ${REDIS_URL:?set REDIS_URL to the cloud Redis URL}
+    environment:
+      <<: *service-environment
+      AUCTION_ACTOR_QUEUE_CAPACITY: "1000"
+      AUCTION_KAFKA_PARTITION_QUEUE_CAPACITY: "1000"
+    cpus: 0.75
+    mem_limit: 384m
+    mem_reservation: 160m
+
+  http-server:
+    <<: *app-defaults
+    env_file:
+      - .env
+      - apps/http-server/.env
+    build:
+      context: .
+      dockerfile: apps/http-server/Dockerfile
+      args:
+        DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the cloud Postgres URL}
+        REDIS_URL: ${REDIS_URL:?set REDIS_URL to the cloud Redis URL}
+    environment:
+      <<: *service-environment
+      HTTP_SERVER_ADDR: "0.0.0.0:8082"
+      FRONTEND_URL: http://localhost:3000
+    ports:
+      - "8082:8082"
+    cpus: 0.50
+    mem_limit: 320m
+    mem_reservation: 128m
+
+  ws-server:
+    <<: *app-defaults
+    env_file:
+      - .env
+      - apps/ws-server/.env
+    build:
+      context: .
+      dockerfile: apps/ws-server/Dockerfile
+      args:
+        DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the cloud Postgres URL}
+        REDIS_URL: ${REDIS_URL:?set REDIS_URL to the cloud Redis URL}
+    environment:
+      <<: *service-environment
+      GRPC_URL: http://grpc:50051
+      WS_SERVER_ADDR: "0.0.0.0:8081"
+    ports:
+      - "8081:8081"
+    # depends_on:
+    #   grpc:
+    #     condition: service_started
+    #   redis:
+    #     condition: service_healthy
+    cpus: 0.35
+    mem_limit: 224m
+    mem_reservation: 96m
+
+  gateway-keeper:
+    <<: *app-defaults
+    env_file:
+      - .env
+      - apps/gateway-keeper/.env
+    build:
+      context: .
+      dockerfile: apps/gateway-keeper/Dockerfile
+    environment:
+      <<: *service-environment
+      INTERNAL_SIGNING_KEY: test-only-internal-signing-key-with-32-bytes
+      HTTP_SERVER_URL: http://http-server:8082
+      WS_SERVER_URL: http://ws-server:8081
+      CORS_ALLOWED_ORIGIN: http://localhost:3000
+      DOWNSTREAM_TIMEOUT_SECS: "15"
+      CIRCUIT_FAILURE_THRESHOLD: "5"
+      CIRCUIT_OPEN_SECS: "20"
+    ports:
+      - "8080:8080"
+    depends_on:
+      http-server:
+        condition: service_started
+      ws-server:
+        condition: service_started
+    cpus: 0.35
+    mem_limit: 192m
+    mem_reservation: 80m
+
+  scheduler:
+    <<: *app-defaults
+    env_file:
+      - .env
+      - apps/scheduler/.env
+    build:
+      context: .
+      dockerfile: apps/scheduler/Dockerfile
+      args:
+        DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the cloud Postgres URL}
+        REDIS_URL: ${REDIS_URL:?set REDIS_URL to the cloud Redis URL}
+    environment:
+      <<: *service-environment
+    cpus: 0.25
+    mem_limit: 160m
+    mem_reservation: 64m
+
+  notification-worker:
+    <<: *app-defaults
+    env_file:
+      - .env
+      - apps/notification-worker/.env
+    build:
+      context: .
+      dockerfile: apps/notification-worker/Dockerfile
+      args:
+        DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the cloud Postgres URL}
+        REDIS_URL: ${REDIS_URL:?set REDIS_URL to the cloud Redis URL}
+    environment:
+      <<: *service-environment
+    cpus: 0.25
+    mem_limit: 192m
+    mem_reservation: 80m
+
+  # web:
+  #   <<: *app-defaults
+  #   env_file:
+  #     - .env
+  #     - apps/web/.env
+  #   build:
+  #     context: .
+  #     dockerfile: apps/web/Dockerfile
+  #     args:
+  #       NEXT_PUBLIC_API_URL: http://localhost:8080
+  #       NEXT_PUBLIC_WS_URL: http://localhost:8080
+  #       NEXT_PUBLIC_SOCKET_URL: http://localhost:8080
+  #   environment:
+  #     NEXT_PUBLIC_API_URL: http://localhost:8080
+  #     NEXT_PUBLIC_WS_URL: http://localhost:8080
+  #     NEXT_PUBLIC_SOCKET_URL: http://localhost:8080
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     gateway-keeper:
+  #       condition: service_started
+  #   cpus: 0.35
+  #   mem_limit: 256m
+  #   mem_reservation: 128m
+
+networks:
+  auction-test:
+    driver: bridge
