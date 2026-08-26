@@ -1,0 +1,83 @@
+name: Bootstrap auction GitOps controllers
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [dev, prod]
+        required: true
+      confirm:
+        description: Type BOOTSTRAP to modify the cluster
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    if: inputs.confirm == 'BOOTSTRAP'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: bhatvinay7/auction-k8s
+          ref: ${{ inputs.environment == 'dev' && 'dev' || 'main' }}
+          token: ${{ secrets.GITOPS_TOKEN }}
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+      - name: Validate pinned infrastructure Helm charts
+        shell: bash
+        run: |
+          helm repo add strimzi https://strimzi.io/charts/
+          helm repo update strimzi
+          helm template strimzi-kafka-operator strimzi/strimzi-kafka-operator \
+            --version 0.43.0 \
+            --namespace kafka \
+            --set watchAnyNamespace=true \
+            --set featureGates=+UseKRaft >/dev/null
+          helm repo add fluent https://fluent.github.io/helm-charts/
+          helm repo update fluent
+          awk '/^      values: \|/{values=1; next} values {sub(/^        /, ""); print}' \
+            infra/base/monitoring/fluent-bit.yaml | \
+            helm template fluent-bit fluent/fluent-bit \
+              --version 0.57.9 \
+              --namespace monitoring \
+              -f - >/dev/null
+      - name: Configure kubectl
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        shell: bash
+        run: |
+          test -n "$KUBE_CONFIG"
+          mkdir -p "$RUNNER_TEMP/kube"
+          printf '%s' "$KUBE_CONFIG" | base64 --decode > "$RUNNER_TEMP/kube/config"
+          chmod 600 "$RUNNER_TEMP/kube/config"
+          echo "KUBECONFIG=$RUNNER_TEMP/kube/config" >> "$GITHUB_ENV"
+          kubectl cluster-info
+      - name: Install Sealed Secrets controller
+        run: kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/latest/download/controller.yaml
+      - name: Install Argo CD and deploy the Strimzi Helm Application
+        shell: bash
+        run: |
+          kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+          kubectl rollout status deployment/argocd-server -n argocd --timeout=10m
+          kubectl apply -k argocd
+          if [ "${{ inputs.environment }}" = "dev" ]; then
+            kubectl apply -f argocd/dev-apps.yaml
+          else
+            kubectl apply -f argocd/prod-apps.yaml
+          fi
+      - name: Wait for Strimzi and the KRaft cluster
+        shell: bash
+        run: |
+          kubectl wait --for=condition=Established \
+            crd/kafkas.kafka.strimzi.io --timeout=15m
+          kubectl rollout status deployment/strimzi-cluster-operator \
+            -n kafka --timeout=15m
+          kubectl wait kafka/auction-kafka -n kafka \
+            --for=condition=Ready --timeout=20m
+      - name: Ensure Kafka topics exist
+        run: ./scripts/ensure-kafka-topics.sh

@@ -1,0 +1,41 @@
+# Git
+.git/
+.gitignore
+auction-k8s
+# Rust Build Output
+target/
+**/*.rs.bk
+
+# Node Dependencies
+node_modules/
+**/node_modules/
+
+# Next.js & Build Output
+.next/
+**/.next/
+**/dist/
+**/build/
+**/out/
+
+# Editor and OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*.log
+
+# Docker/K8s Manifests (not needed in container context)
+docker-deployment*.yaml
+docker-deployment*.yml
+docker-compose*.yml
+docker-compose*.yaml
+k8s/
+
+# ====================================================
+# EXPLICITLY ALLOW ENVIRONMENT VARIABLES
+# ====================================================
+# As requested, ensure .env files are NOT ignored 
+# (in case any wildcards catch them).
+!**/.env*
+!.env

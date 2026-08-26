@@ -1,0 +1,62 @@
+name: Promote auction images to production
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full application commit SHA already built on dev
+        required: true
+      confirm:
+        description: Type PROMOTE to create the production GitOps pull request
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  promote:
+    if: inputs.confirm == 'PROMOTE'
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/auction
+      GITOPS_REPOSITORY: bhatvinay7/auction-k8s
+    steps:
+      - name: Validate commit input
+        shell: bash
+        run: |
+          [[ "${{ inputs.commit_sha }}" =~ ^[0-9a-f]{40}$ ]]
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITOPS_REPOSITORY }}
+          ref: main
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: imranismail/setup-kustomize@v2
+      - name: Resolve development tags to immutable digests
+        working-directory: gitops/apps/overlays/prod
+        shell: bash
+        run: |
+          tag="commit-$(echo '${{ inputs.commit_sha }}' | cut -c1-7)"
+          for service in auction-engine gateway-keeper grpc http-server notification-worker scheduler ws-server web; do
+            image="${IMAGE_PREFIX}-${service}"
+            digest="$(docker buildx imagetools inspect "${image}:${tag}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+            test -n "$digest"
+            kustomize edit set image "${image}=${image}@${digest}"
+          done
+          kustomize build . >/dev/null
+      - name: Create production pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+          base: main
+          branch: promote/auction-${{ inputs.commit_sha }}
+          commit-message: "chore(prod): promote auction ${{ inputs.commit_sha }}"
+          title: "Promote auction ${{ inputs.commit_sha }} to production"
+          body: "Promotes all auction services from tested development tags to immutable GHCR digests."

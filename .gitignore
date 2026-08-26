@@ -36,3 +36,10 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+**/target
+**/.env
+auction-k8s
+process.md
+workflow.md
+dataflow.md

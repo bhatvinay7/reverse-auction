@@ -1,0 +1,133 @@
+name: Auction CI and development delivery
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: auction-delivery-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/auction
+  GITOPS_REPOSITORY: bhatvinay7/auction-k8s
+
+jobs:
+  validate:
+    name: Validate Rust and web applications
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check Rust workspace
+        run: cargo check --workspace --all-targets --locked
+      - name: Test auction engine and gateway
+        run: cargo test -p auction-engine --lib --locked && cargo test -p gateway-keeper --locked
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install web dependencies
+        run: bun install --frozen-lockfile
+      - name: Check web types and lint
+        working-directory: apps/web
+        run: bun run check-types && bunx eslint .
+
+  build:
+    name: Build ${{ matrix.service }}
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: auction-engine
+            dockerfile: apps/auction-engine/Dockerfile
+          - service: gateway-keeper
+            dockerfile: apps/gateway-keeper/Dockerfile
+          - service: grpc
+            dockerfile: apps/grpc/Dockerfile
+          - service: http-server
+            dockerfile: apps/http-server/Dockerfile
+          - service: notification-worker
+            dockerfile: apps/notification-worker/Dockerfile
+          - service: scheduler
+            dockerfile: apps/scheduler/Dockerfile
+          - service: ws-server
+            dockerfile: apps/ws-server/Dockerfile
+          - service: web
+            dockerfile: apps/web/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute immutable tag
+        id: version
+        shell: bash
+        run: echo "tag=commit-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+          tags: type=raw,value=${{ steps.version.outputs.tag }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.DEV_PUBLIC_API_URL }}
+            NEXT_PUBLIC_SOCKET_URL=${{ vars.DEV_PUBLIC_SOCKET_URL }}
+
+  update-development-gitops:
+    name: Update development GitOps image tags
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require cross-repository token
+        env:
+          TOKEN: ${{ secrets.GITOPS_TOKEN }}
+        run: test -n "$TOKEN" || { echo "GITOPS_TOKEN is required"; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GITOPS_REPOSITORY }}
+          ref: dev
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+      - uses: imranismail/setup-kustomize@v2
+      - name: Pin development images
+        working-directory: gitops/apps/overlays/dev
+        shell: bash
+        run: |
+          tag="commit-${GITHUB_SHA::7}"
+          for service in auction-engine gateway-keeper grpc http-server notification-worker scheduler ws-server web; do
+            kustomize edit set image "${IMAGE_PREFIX}-${service}=${IMAGE_PREFIX}-${service}:${tag}"
+          done
+          kustomize build . >/dev/null
+      - name: Commit and push GitOps change
+        working-directory: gitops
+        shell: bash
+        run: |
+          git config user.name "auction-delivery[bot]"
+          git config user.email "auction-delivery[bot]@users.noreply.github.com"
+          git add apps/overlays/dev/kustomization.yaml
+          git diff --cached --quiet && exit 0
+          git commit -m "chore(dev): deploy auction commit-${GITHUB_SHA::7}"
+          git push origin HEAD:dev
