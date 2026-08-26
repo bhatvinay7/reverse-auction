@@ -3,6 +3,7 @@
 import { Sidebar } from '../../../components/Sidebar';
 import { NewShipmentForm } from '../../../components/shipment/NewShipmentForm';
 import { motion } from 'framer-motion';
+import { AdminGuard } from '../../../components/AdminGuard';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -11,7 +12,7 @@ const fadeUp = {
 
 export default function NewShipmentPage() {
   return (
-    <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-900 selection:bg-indigo-500/30">
+    <AdminGuard><div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950 selection:bg-indigo-500/30">
       <Sidebar />
       
       <main className="flex-1 ml-0 md:ml-64 flex flex-col h-screen overflow-hidden">
@@ -30,6 +31,6 @@ export default function NewShipmentPage() {
         </div>
 
       </main>
-    </div>
+    </div></AdminGuard>
   );
 }

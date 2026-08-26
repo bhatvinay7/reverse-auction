@@ -8,7 +8,7 @@ import { ThemeToggle } from '../../components/ThemeToggle';
 
 export default function VerifyEmailPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-900 p-4 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 p-4 relative overflow-hidden">
       
       <div className="absolute top-4 right-4 z-50">
         <ThemeToggle />
@@ -27,7 +27,7 @@ export default function VerifyEmailPage() {
         
         <h1 className="text-2xl font-black text-zinc-900 dark:text-zinc-50 tracking-tight mb-3">Verify your email</h1>
         <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400 mb-8 leading-relaxed">
-          We've sent a verification link to your email address. Please click the link to activate your ProcureX account.
+          We&apos;ve sent a verification link to your email address. Please click the link to activate your AquaBid account.
         </p>
 
         <button className="w-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 font-bold py-3 px-4 rounded-lg transition-colors mb-4">

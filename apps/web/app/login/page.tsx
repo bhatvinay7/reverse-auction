@@ -2,17 +2,45 @@
 
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-import { Gavel, Mail, Lock, ArrowRight } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Gavel, Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { ThemeToggle } from '../../components/ThemeToggle';
+import { Toast } from '../../components/Toast';
 
 export default function LoginPage() {
-  const [mounted, setMounted] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-  useEffect(() => setMounted(true), []);
+
+  const loginMutation = useMutation({
+    mutationFn: async (variables: { email: string; password: string }) => {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const res = await fetch(`${apiUrl}/api/auth/signin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(variables)
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Invalid credentials');
+      }
+      return await res.json();
+    },
+    onSuccess: (data: { token: string; user_id: string; role: string; name?: string }) => {
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('userId', data.user_id);
+      localStorage.setItem('userRole', data.role);
+      if (data.name) localStorage.setItem('userName', data.name);
+      window.location.href = data.role === 'ADMIN' ? '/admin' : data.role === 'CUSTOMER' ? '/seller/dashboard' : '/dashboard';
+    },
+    onError: (err: Error) => {
+      setToast({ message: `Login failed: ${err.message}`, type: 'error' });
+    }
+  });
 
   return (
-    <div className="min-h-screen flex bg-[#f4f5f7] dark:bg-zinc-900 font-sans selection:bg-indigo-500/30">
+    <div className="min-h-screen flex bg-[#f4f5f7] dark:bg-zinc-950 font-sans selection:bg-indigo-500/30">
+      <Toast message={toast?.message || ''} type={toast?.type} onClose={() => setToast(null)} />
       
       {/* Left Marketing Panel */}
       <div className="hidden lg:flex lg:w-1/2 relative bg-indigo-900 overflow-hidden items-center justify-center">
@@ -69,14 +97,21 @@ export default function LoginPage() {
             <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400 text-center">Enter your credentials to access your account.</p>
           </div>
 
-          <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
+          <form className="space-y-5" onSubmit={(e) => {
+            e.preventDefault();
+            const target = e.target as HTMLFormElement;
+            const email = (target.elements[0] as HTMLInputElement).value;
+            const password = (target.elements[1] as HTMLInputElement).value;
+            loginMutation.mutate({ email, password });
+          }}>
             <div className="space-y-2">
               <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Email Address</label>
               <div className="relative">
-                <Mail size={18} className="absolute left-3.5 top-3.5 text-zinc-400" />
+                <Mail size={16} className="absolute left-3 top-2.5 text-zinc-400" />
                 <input 
                   type="email" 
-                  className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 border-zinc-200 dark:border-zinc-800 bg-[#f4f5f7] dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-medium focus:border-indigo-500 transition-colors outline-none" 
+                  required
+                  className="w-full pl-9 pr-3 py-2 rounded-md border border-zinc-200 dark:border-zinc-800 bg-[#f4f5f7] dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-medium focus:border-indigo-500 transition-colors outline-none text-sm" 
                   placeholder="name@company.com" 
                 />
               </div>
@@ -90,18 +125,27 @@ export default function LoginPage() {
                 </Link>
               </div>
               <div className="relative">
-                <Lock size={18} className="absolute left-3.5 top-3.5 text-zinc-400" />
+                <Lock size={16} className="absolute left-3 top-2.5 text-zinc-400" />
                 <input 
-                  type="password" 
-                  className="w-full pl-11 pr-4 py-3.5 rounded-xl border-2 border-zinc-200 dark:border-zinc-800 bg-[#f4f5f7] dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-medium focus:border-indigo-500 transition-colors outline-none" 
+                  type="password"
+                  required
+                  className="w-full pl-9 pr-3 py-2 rounded-md border border-zinc-200 dark:border-zinc-800 bg-[#f4f5f7] dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-medium focus:border-indigo-500 transition-colors outline-none text-sm" 
                   placeholder="••••••••" 
                 />
               </div>
             </div>
 
-            <Link href="/" className="w-full mt-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-4 rounded-xl shadow-xl shadow-indigo-600/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 block text-center">
-              Sign In <ArrowRight size={20} />
-            </Link>
+            <button 
+              type="submit" 
+              disabled={loginMutation.isPending}
+              className="w-full mt-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-md shadow-md shadow-indigo-600/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 text-center disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            >
+              {loginMutation.isPending ? (
+                <><Loader2 size={16} className="animate-spin" /> Signing In...</>
+              ) : (
+                <>Sign In <ArrowRight size={16} /></>
+              )}
+            </button>
           </form>
 
           <div className="mt-8 flex items-center gap-4">
@@ -111,8 +155,8 @@ export default function LoginPage() {
           </div>
 
           <div className="mt-8">
-            <button className="w-full flex items-center justify-center gap-3 bg-[#fdfbf7] dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 hover:bg-[#f4f5f7] dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold py-3.5 px-4 rounded-xl transition-colors shadow-sm">
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <button className="w-full flex items-center justify-center gap-3 bg-[#fdfbf7] dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:bg-[#f4f5f7] dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold py-2.5 px-4 rounded-md transition-colors shadow-sm text-sm">
+              <svg className="w-4 h-4" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
                 <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
                 <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
@@ -123,7 +167,7 @@ export default function LoginPage() {
           </div>
 
           <p className="mt-10 text-center text-sm font-medium text-zinc-500 dark:text-zinc-400">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link href="/signup" className="font-bold text-indigo-600 dark:text-indigo-400 hover:underline">
               Sign up
             </Link>

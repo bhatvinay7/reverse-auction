@@ -1,80 +1,127 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import * as d3 from 'd3';
-import { motion } from 'framer-motion';
-import { MapPin, Plane } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { MapPin } from 'lucide-react';
+import { useJsApiLoader, GoogleMap, DirectionsRenderer, Marker } from '@react-google-maps/api';
 
 interface ShipmentMapProps {
   originLat: number;
   originLng: number;
   destLat: number;
   destLng: number;
+  originAddress?: string;
+  destAddress?: string;
 }
 
-export function ShipmentMap({ originLat, originLng, destLat, destLng }: ShipmentMapProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [pathData, setPathData] = useState<string>('');
+const libraries: ("places")[] = ["places"];
+
+export function ShipmentMap({ originLat, originLng, destLat, destLng, originAddress, destAddress }: ShipmentMapProps) {
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
+    libraries
+  });
   
+  const [directionsResponse, setDirectionsResponse] = useState<google.maps.DirectionsResult | null>(null);
+  const [distance, setDistance] = useState<string>('');
+  const [duration, setDuration] = useState<string>('');
+
   useEffect(() => {
-    if (!containerRef.current) return;
-    
-    const width = containerRef.current.clientWidth;
-    const height = 300;
-    
-    // Create a generic map projection centered between the points
-    const projection = d3.geoMercator()
-      .center([(originLng + destLng) / 2, (originLat + destLat) / 2])
-      .scale(width * 1.5)
-      .translate([width / 2, height / 2]);
+    const isValidOrigin = originLat !== 0 || originLng !== 0;
+    const isValidDest = destLat !== 0 || destLng !== 0;
 
-    const originPixel = projection([originLng, originLat]);
-    const destPixel = projection([destLng, destLat]);
-
-    if (originPixel && destPixel) {
-       // Draw an arched curve between point A and B
-       const dx = destPixel[0] - originPixel[0];
-       const dy = destPixel[1] - originPixel[1];
-       const dr = Math.sqrt(dx * dx + dy * dy) * 1.5; // arc radius
-       
-       setPathData(`M${originPixel[0]},${originPixel[1]} A${dr},${dr} 0 0,1 ${destPixel[0]},${destPixel[1]}`);
+    if (isValidOrigin && isValidDest && isLoaded && window.google) {
+      const directionsService = new window.google.maps.DirectionsService();
+      directionsService.route({
+        origin: { lat: originLat, lng: originLng },
+        destination: { lat: destLat, lng: destLng },
+        travelMode: window.google.maps.TravelMode.DRIVING
+      }, (result, status) => {
+        if (status === window.google.maps.DirectionsStatus.OK && result) {
+          setDirectionsResponse(result);
+          const dist = result.routes?.[0]?.legs?.[0]?.distance?.text;
+          const dur = result.routes?.[0]?.legs?.[0]?.duration?.text;
+          if (dist) setDistance(dist);
+          if (dur) setDuration(dur);
+        }
+      });
     }
-  }, [originLat, originLng, destLat, destLng]);
+  }, [originLat, originLng, destLat, destLng, isLoaded]);
 
   return (
-    <div className="printed-card rounded-xl overflow-hidden p-6 relative bg-zinc-50 dark:bg-zinc-900/20">
-      <h3 className="text-lg font-semibold mb-4 text-zinc-900 dark:text-zinc-100">Live Route</h3>
+    <div className="printed-card rounded-xl overflow-hidden p-6 relative bg-zinc-50 dark:bg-zinc-900/20 flex flex-col h-full">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Live Route</h3>
+      </div>
+
+      {(originAddress || destAddress) && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <MapPin size={14} className="text-emerald-500 shrink-0" />
+            <span className="truncate">{originAddress || 'Origin'}</span>
+          </div>
+          <div className="hidden sm:block w-8 h-[1px] bg-zinc-300 dark:bg-zinc-700 shrink-0"></div>
+          <div className="flex items-center gap-1.5 flex-1 min-w-0 sm:justify-end">
+            <span className="truncate">{destAddress || 'Destination'}</span>
+            <MapPin size={14} className="text-rose-500 shrink-0" />
+          </div>
+        </div>
+      )}
       
-      <div ref={containerRef} className="w-full h-[300px] relative rounded-lg border border-zinc-200 dark:border-zinc-800/50 bg-[url('https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=2948&auto=format&fit=crop')] bg-cover bg-center bg-blend-luminosity opacity-90 dark:opacity-70 flex items-center justify-center">
-        
-        {/* SVG Route overlay */}
-        <svg width="100%" height="100%" className="absolute inset-0 z-10 drop-shadow-xl">
-           {pathData && (
+      <div className="flex-1 flex flex-col h-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm">
+        <div className="w-full flex-1 min-h-[300px] relative bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+          {isLoaded ? (
+          <GoogleMap
+            mapContainerStyle={{ width: '100%', height: '100%' }}
+            center={{ lat: (originLat + destLat) / 2, lng: (originLng + destLng) / 2 }}
+            zoom={4}
+            options={{
+              disableDefaultUI: true,
+              zoomControl: true,
+              styles: [
+                { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+                { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+                { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+                { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
+                { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] }
+              ]
+            }}
+          >
+            {directionsResponse ? (
+              <DirectionsRenderer 
+                directions={directionsResponse} 
+                options={{ polylineOptions: { strokeColor: '#4f46e5', strokeWeight: 5 } }}
+              />
+            ) : (
               <>
-                 <path d={pathData} fill="none" stroke="currentColor" className="text-indigo-600/30 dark:text-indigo-400/30" strokeWidth="4" strokeDasharray="8 8" />
-                 <motion.path
-                    d={pathData}
-                    fill="none"
-                    stroke="currentColor"
-                    className="text-indigo-600 dark:text-indigo-400"
-                    strokeWidth="4"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={{ duration: 2, ease: "easeInOut", repeat: Infinity, repeatDelay: 1 }}
-                 />
+                <Marker position={{ lat: originLat, lng: originLng }} />
+                <Marker position={{ lat: destLat, lng: destLng }} />
               </>
-           )}
-        </svg>
-
-        {/* Abstract Map overlay to make it look like a logistics tracker */}
-        <div className="absolute inset-0 bg-[#faf9f6]/60 dark:bg-zinc-900/80 backdrop-blur-[2px]"></div>
-
-        <div className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-[#faf9f6]/90 dark:bg-zinc-900/90 backdrop-blur-sm px-3 py-1.5 rounded-lg shadow-sm border border-zinc-200 dark:border-zinc-800/50 text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-           <MapPin size={14} className="text-emerald-500" /> Origin: 34.05°N, 118.24°W
+            )}
+          </GoogleMap>
+        ) : (
+          <div className="flex items-center justify-center w-full h-full text-zinc-500 font-medium">Loading Map...</div>
+        )}
         </div>
-        <div className="absolute bottom-4 right-4 z-20 flex items-center gap-2 bg-[#faf9f6]/90 dark:bg-zinc-900/90 backdrop-blur-sm px-3 py-1.5 rounded-lg shadow-sm border border-zinc-200 dark:border-zinc-800/50 text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-           <MapPin size={14} className="text-indigo-500" /> Dest: 51.50°N, 0.12°W
-        </div>
+        
+        {directionsResponse && distance && duration && (
+          <div className="p-5 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center text-center">
+            <div className="flex-1">
+              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-0.5">Total Distance</p>
+              <p className="font-black text-xl text-indigo-600 dark:text-indigo-400">{distance}</p>
+            </div>
+            <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-800 mx-2"></div>
+            <div className="flex-1">
+              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-0.5">Est. Travel Time</p>
+              <p className="font-black text-xl text-zinc-900 dark:text-white">{duration}</p>
+            </div>
+            <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-800 mx-2"></div>
+            <div className="flex-1">
+              <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-0.5">Traffic Delay</p>
+              <p className="font-black text-xl text-emerald-500">Normal</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

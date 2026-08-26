@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { motion } from 'framer-motion';
-import { TrendingDown, Users, Clock } from 'lucide-react';
+import { TrendingDown, Users } from 'lucide-react';
 
 interface BidData {
   time: string;
@@ -23,6 +23,7 @@ export function BidHistoryGraph({ data }: BidHistoryGraphProps) {
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver(entries => {
+      if (!entries[0]) return;
       setDimensions({
         width: entries[0].contentRect.width,
         height: 250
@@ -58,7 +59,7 @@ export function BidHistoryGraph({ data }: BidHistoryGraphProps) {
 
     const path = lineGenerator(data);
     if (path) setPathData(path);
-  }, [data, dimensions.width]);
+  }, [data, dimensions.height, dimensions.width]);
 
   // Calculate stats
   const startBid = data[0]?.amount || 0;

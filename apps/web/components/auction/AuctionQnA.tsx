@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { MessageSquare, CornerDownRight, Send, Bold, Italic, Link as LinkIcon, List, Image as ImageIcon } from 'lucide-react';
+import { MessageSquare, Send, Bold, Italic, Link as LinkIcon, List, Image as ImageIcon } from 'lucide-react';
 
 type Question = {
   id: number;

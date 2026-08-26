@@ -1,54 +1,42 @@
 'use client';
 
 import { useDispatch, useSelector } from 'react-redux';
-import { setActiveTab } from '../store/slices/uiSlice';
+import { toggleSidebarCollapsed } from '../store/slices/uiSlice';
 import { RootState } from '../store/store';
 import { 
   LayoutDashboard, 
-  ArrowUpRight, 
-  ArrowDownRight, 
   Users, 
-  BarChart3, 
-  Gavel,
   History,
   Settings,
   PlusCircle,
   Package,
-  Sun,
-  Moon
+  ShieldCheck,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import clsx from 'clsx';
 import Link from 'next/link';
-import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { Menu, X } from 'lucide-react';
-
-const navItems = [
-  { id: 'dashboard', label: 'Executive Dashboard', icon: LayoutDashboard },
-  { id: 'reverse', label: 'Load Marketplace', icon: ArrowDownRight },
-];
+import { useAuth } from '../contexts/AuthContext';
 
 export function Sidebar() {
   const dispatch = useDispatch();
-  const activeTab = useSelector((state: RootState) => state.ui.activeTab);
-  const [mounted, setMounted] = useState(false);
+  const isCollapsed = useSelector((state: RootState) => state.ui.isSidebarCollapsed);
   const [isOpen, setIsOpen] = useState(false);
-  const { theme, setTheme } = useTheme();
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const { session } = useAuth();
+  const userRole = session?.role;
 
   return (
-    <>
-      {/* Mobile Hamburger Toggle */}
+    <div className="app-sidebar-instance">
+      {/* Mobile Floating Hamburger */}
       <button 
         onClick={() => setIsOpen(true)}
-        className="md:hidden fixed top-4 left-4 z-[40] p-2 bg-[#faf9f6] dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-sm text-zinc-600 dark:text-zinc-400"
+        className="md:hidden fixed top-[12px] right-[100px] z-[65] p-2 rounded-lg bg-zinc-100/50 dark:bg-zinc-800/50 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors backdrop-blur-md"
       >
-        <Menu size={24} />
+        <Menu size={20} />
       </button>
 
       {/* Mobile Overlay */}
@@ -65,104 +53,95 @@ export function Sidebar() {
       </AnimatePresence>
 
       <aside className={clsx(
-        "fixed top-0 left-0 h-screen w-64 border-r-[1px] border-zinc-200 dark:border-zinc-800 bg-[#faf9f6] dark:bg-zinc-900 flex flex-col transition-transform duration-300 z-[50]",
-        isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        "fixed top-16 left-0 h-[calc(100vh-4rem)] border-r-[1px] border-zinc-200 dark:border-zinc-800 bg-[#faf9f6] dark:bg-zinc-950 flex flex-col transition-all duration-300 z-[50]",
+        isOpen ? "translate-x-0 w-64" : "-translate-x-full md:translate-x-0",
+        isCollapsed ? "md:w-20" : "md:w-64"
       )}>
-        {/* Logo */}
-        <div className="h-20 flex items-center justify-between px-6 border-b-[1px] border-zinc-100 dark:border-zinc-800">
-          <div className="flex items-center gap-3 text-indigo-600 dark:text-indigo-400">
-            <Gavel size={28} strokeWidth={2} />
-            <span className="font-semibold text-lg tracking-tight text-zinc-900 dark:text-zinc-100">
-              ProcureX
-            </span>
-          </div>
-          <button onClick={() => setIsOpen(false)} className="md:hidden text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 p-1">
-            <X size={20} />
-          </button>
-        </div>
+        <div className="hidden md:flex h-4 items-center" />
+        <button onClick={() => setIsOpen(false)} className="md:hidden absolute top-4 right-4 text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 p-1">
+          <X size={20} />
+        </button>
 
-        <nav className="flex-1 py-8 px-4 space-y-2 overflow-y-auto">
+        {/* Desktop Collapse Toggle */}
+        <button 
+          onClick={() => dispatch(toggleSidebarCollapsed())} 
+          className="hidden md:flex absolute -right-3 top-4 w-6 h-6 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-full items-center justify-center text-zinc-500 hover:text-indigo-600 dark:hover:text-indigo-400 z-10 shadow-sm"
+        >
+          {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
+
+        <nav className="flex-1 py-8 px-4 space-y-2 overflow-y-auto overflow-x-hidden">
           <Link
             href="/dashboard"
             onClick={() => setIsOpen(false)}
             className={clsx(
-              "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200",
+              "w-full flex items-center gap-3 py-3 rounded-lg text-sm font-medium transition-all duration-200",
+              isCollapsed ? "px-0 justify-center" : "px-4",
               "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100"
             )}
+            title={isCollapsed ? "Executive Dashboard" : undefined}
           >
-            <LayoutDashboard size={18} strokeWidth={2} />
-            Executive Dashboard
+            <LayoutDashboard size={18} strokeWidth={2} className="shrink-0" />
+            {!isCollapsed && <span>Executive Dashboard</span>}
           </Link>
+          {userRole === 'CUSTOMER' && <>
+            <Link href="/seller/dashboard" onClick={() => setIsOpen(false)} className={clsx("w-full flex items-center gap-3 py-3 rounded-lg text-sm font-medium", isCollapsed ? "justify-center" : "px-4", "text-zinc-600 dark:text-zinc-400")}><Package size={18} />{!isCollapsed && <span>Seller dashboard</span>}</Link>
+            <Link href="/sell/new" onClick={() => setIsOpen(false)} className={clsx("w-full flex items-center gap-3 py-3 rounded-lg text-sm font-medium", isCollapsed ? "justify-center" : "px-4", "text-zinc-600 dark:text-zinc-400")}><PlusCircle size={18} />{!isCollapsed && <span>Submit listing</span>}</Link>
+          </>}
           <Link
             href="/history"
             onClick={() => setIsOpen(false)}
             className={clsx(
-              "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200",
+              "w-full flex items-center gap-3 py-3 rounded-lg text-sm font-medium transition-all duration-200",
+              isCollapsed ? "px-0 justify-center" : "px-4",
               "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100"
             )}
+            title={isCollapsed ? "Bidding History" : undefined}
           >
-            <History size={18} strokeWidth={2} />
-            Bidding History
+            <History size={18} strokeWidth={2} className="shrink-0" />
+            {!isCollapsed && <span>Bidding History</span>}
           </Link>
           <Link
             href="/profile"
             onClick={() => setIsOpen(false)}
             className={clsx(
-              "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200",
+              "w-full flex items-center gap-3 py-3 rounded-lg text-sm font-medium transition-all duration-200",
+              isCollapsed ? "px-0 justify-center" : "px-4",
               "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100"
             )}
+            title={isCollapsed ? "User Profile" : undefined}
           >
-            <Users size={18} strokeWidth={2} />
-            User Profile
+            <Users size={18} strokeWidth={2} className="shrink-0" />
+            {!isCollapsed && <span>User Profile</span>}
           </Link>
           <Link
             href="/settings"
             onClick={() => setIsOpen(false)}
             className={clsx(
-              "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200",
+              "w-full flex items-center gap-3 py-3 rounded-lg text-sm font-medium transition-all duration-200",
+              isCollapsed ? "px-0 justify-center" : "px-4",
               "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100"
             )}
+            title={isCollapsed ? "Platform Settings" : undefined}
           >
-            <Settings size={18} strokeWidth={2} />
-            Platform Settings
+            <Settings size={18} strokeWidth={2} className="shrink-0" />
+            {!isCollapsed && <span>Platform Settings</span>}
           </Link>
 
-          <Link
-            href="/shipment/new"
-            onClick={() => setIsOpen(false)}
-            className={clsx(
-              "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200",
-              "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100"
-            )}
-          >
-            <PlusCircle size={18} strokeWidth={2} />
-            Post New Shipment
-          </Link>
-          <Link
-            href="/forward-auction/new"
-            onClick={() => setIsOpen(false)}
-            className={clsx(
-              "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200",
-              "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100"
-            )}
-          >
-            <Package size={18} strokeWidth={2} />
-            Sell Product (Forward)
-          </Link>
+          {userRole === 'ADMIN' && (
+            <>
+              <Link href="/auction/new" onClick={() => setIsOpen(false)} title={isCollapsed ? "Create Auction" : undefined} className={clsx("w-full flex items-center gap-3 py-3 rounded-lg text-sm font-medium transition-all duration-200", isCollapsed ? "px-0 justify-center" : "px-4", "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100")}>
+                <PlusCircle size={18} strokeWidth={2} className="shrink-0" />
+                {!isCollapsed && <span>Create Auction</span>}
+              </Link>
+              <Link href="/admin" onClick={() => setIsOpen(false)} title={isCollapsed ? "Admin Console" : undefined} className={clsx("w-full flex items-center gap-3 py-3 rounded-lg text-sm font-medium transition-all duration-200", isCollapsed ? "px-0 justify-center" : "px-4", "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100")}>
+                <ShieldCheck size={18} strokeWidth={2} className="shrink-0" />
+                {!isCollapsed && <span>Admin Console</span>}
+              </Link>
+            </>
+          )}
         </nav>
-        <div className="p-4 border-t-[1px] border-zinc-100 dark:border-zinc-800">
-          <button
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className={clsx(
-              "w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200",
-              "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-100"
-            )}
-          >
-            {theme === 'dark' ? <Moon size={18} strokeWidth={2} /> : <Sun size={18} strokeWidth={2} />}
-            {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-          </button>
-        </div>
       </aside>
-    </>
+    </div>
   );
 }

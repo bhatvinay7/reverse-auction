@@ -1,4 +1,5 @@
 'use client';
+/* eslint-disable @next/next/no-img-element */
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -28,12 +29,7 @@ export function MediaGallery({ media }: MediaGalleryProps) {
           >
             {activeMedia.type === 'IMAGE' ? (
               <img src={activeMedia.url} alt="Shipment item" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-black/5 relative">
-                <img src={activeMedia.url} alt="Video thumbnail" className="w-full h-full object-cover opacity-80" />
-                <PlayCircle size={64} className="text-white drop-shadow-lg absolute" />
-              </div>
-            )}
+            ) : <video src={activeMedia.url} controls playsInline className="h-full w-full bg-black object-contain" />}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -50,7 +46,7 @@ export function MediaGallery({ media }: MediaGalleryProps) {
                 : 'border-transparent hover:border-zinc-300 dark:hover:border-zinc-700'
             }`}
           >
-            <img src={item.url} alt={`Thumbnail ${idx}`} className="w-full h-full object-cover" />
+            {item.type === 'VIDEO' ? <video src={item.url} muted preload="metadata" className="h-full w-full object-cover" /> : <img src={item.url} alt={`Thumbnail ${idx}`} className="w-full h-full object-cover" />}
             {item.type === 'VIDEO' && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                 <PlayCircle size={24} className="text-white" />

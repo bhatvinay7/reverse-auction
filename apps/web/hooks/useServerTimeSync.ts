@@ -11,24 +11,10 @@ export function useServerTimeSync() {
   useEffect(() => {
     let mounted = true;
 
-    const syncTime = async () => {
+    const syncTime = () => {
       setIsSyncing(true);
-      // Simulate network request to get server time
-      const start = Date.now();
-
-      // In a real app, this would be an actual API call returning { serverTime: number }
-      const mockNetworkDelay = 50;
-      await new Promise(res => setTimeout(res, mockNetworkDelay));
-
-      const serverTime = Date.now() + 1500; // Mock server is 1.5 seconds ahead
-      const end = Date.now();
-
-      const rtt = end - start;
-      const estimatedServerTime = serverTime + rtt / 2;
-      const skew = estimatedServerTime - end;
-
       if (mounted) {
-        dispatch(setTimeSkew(skew));
+        dispatch(setTimeSkew(0));
         setIsSyncing(false);
       }
     };

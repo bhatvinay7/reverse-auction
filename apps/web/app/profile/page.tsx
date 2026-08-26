@@ -11,10 +11,10 @@ const fadeUp = {
 
 export default function ProfilePage() {
   return (
-    <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-900 selection:bg-indigo-500/30">
+    <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950 selection:bg-indigo-500/30">
       <Sidebar />
       
-      <main className="flex-1 ml-0 md:ml-64 flex flex-col h-screen overflow-hidden">
+      <main className="min-h-[calc(100dvh-4rem)] flex-1 md:ml-64">
         
         {/* Simple Header */}
         <div className="bg-[#faf9f6] dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-8 py-6 z-10 flex-shrink-0">
@@ -23,7 +23,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-auto p-8 relative">
+        <div className="relative p-4 sm:p-8">
           <motion.div variants={fadeUp} initial="hidden" animate="show" className="w-full">
             <UserProfile />
           </motion.div>

@@ -1,31 +1,29 @@
 'use client';
 
-import { useState, use, useEffect } from 'react';
-import { useDispatch } from 'react-redux';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, use } from 'react';
+import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { Sidebar } from '../../../components/Sidebar';
 import { CountdownTimer } from '../../../components/auction/CountdownTimer';
 import { BiddingConsole } from '../../../components/auction/BiddingConsole';
 import { Leaderboard } from '../../../components/auction/Leaderboard';
 import { AuditLedger } from '../../../components/auction/AuditLedger';
 import { AuctionDetailsView } from '../../../components/auction/AuctionDetailsView';
-import { SellerProfileBadge } from '../../../components/profile/SellerProfileBadge';
 import { AuctionQnA } from '../../../components/auction/AuctionQnA';
-import { useSocket } from '../../../contexts/SocketContext';
-import { initAuction } from '../../../store/slices/auctionSlice';
+import { WinnerModal } from '../../../components/auction/WinnerModal';
+import { useAuctionSocket } from '../../../hooks/useAuctionSocket';
 import { useServerTimeSync } from '../../../hooks/useServerTimeSync';
 import { ArrowLeft, Share2, Map, Image as ImageIcon, FileText, X, MessageSquare } from 'lucide-react';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
+import { Auction } from '../../../types/api';
 
-export default function ShipmentPage({ params }: { params: Promise<{ id: string }> }) {
+export default function AuctionDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
-  const dispatch = useDispatch();
-  const { socket, isConnected } = useSocket();
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [detailsTab, setDetailsTab] = useState<'details' | 'photos' | 'map'>('details');
   const [qnaModalOpen, setQnaModalOpen] = useState(false);
 
-  const staggerContainer = {
+  const staggerContainer: Variants = {
     hidden: { opacity: 0 },
     show: {
       opacity: 1,
@@ -33,31 +31,35 @@ export default function ShipmentPage({ params }: { params: Promise<{ id: string 
     }
   };
 
-  const fadeUp = {
+  const fadeUp: Variants = {
     hidden: { opacity: 0, y: 20 },
     show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } }
   };
 
   useServerTimeSync();
 
-  useEffect(() => {
-    dispatch(initAuction({
-      auctionId: resolvedParams.id,
-      endTime: Date.now() + 4500000, 
-      initialLowest: 10850.00,
-    }));
-  }, [dispatch, resolvedParams.id]);
+  // useAuctionSocket handles: subscribe/unsubscribe, auction_init (sets isParticipant),
+  // bid_update, auction_closed — all via the global SocketContext.
+  useAuctionSocket(resolvedParams.id);
 
-  useEffect(() => {
-    if (!socket || !isConnected) return;
-    socket.emit('join_auction', { auctionId: resolvedParams.id });
-    return () => {
-      socket.emit('leave_auction', { auctionId: resolvedParams.id });
-    };
-  }, [socket, isConnected, resolvedParams.id]);
+  const { data: auctions } = useQuery({
+    queryKey: ['auctions'],
+    queryFn: async () => {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+      const res = await fetch(`${apiUrl}/api/auction`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (!res.ok) throw new Error('Failed to fetch auctions');
+      const json = await res.json();
+      return (json.auctions || []) as Auction[];
+    },
+  });
+
+  const auction = auctions?.find(a => a.id === resolvedParams.id);
 
   return (
-    <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-slate-300 selection:bg-indigo-500/30">
+    <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-slate-300 selection:bg-indigo-500/30">
+      <WinnerModal />
       <Sidebar />
       
       <main className="flex-1 ml-0 md:ml-64 flex flex-col h-screen overflow-hidden relative">
@@ -70,9 +72,9 @@ export default function ShipmentPage({ params }: { params: Promise<{ id: string 
              </Link>
              <div>
                 <h2 className="font-semibold text-sm leading-tight text-zinc-900 dark:text-slate-300">
-                  Shipment Auction: <span className="text-indigo-600 dark:text-[#38bdf8]">#{resolvedParams.id}</span>
+                  {auction?.auction_type === 'FORWARD' ? 'Forward' : 'Reverse'} Auction: <span className="text-indigo-600 dark:text-[#38bdf8]">#{resolvedParams.id}</span>
                 </h2>
-                <p className="text-zinc-500 dark:text-slate-500 text-xs">Heavy Machinery Relocation - 2x CNC Milling Centers</p>
+                <p className="text-zinc-500 dark:text-slate-500 text-xs">{auction?.title || 'Loading...'}</p>
              </div>
           </div>
           <div className="flex flex-wrap sm:flex-nowrap gap-3 w-full md:w-auto">
@@ -87,7 +89,7 @@ export default function ShipmentPage({ params }: { params: Promise<{ id: string 
                   onClick={() => { setDetailsTab('details'); setDetailsModalOpen(true); }}
                   className="w-full justify-center bg-indigo-50 dark:bg-[#1e293b] text-indigo-700 dark:text-[#38bdf8] hover:bg-indigo-100 dark:hover:bg-[#334155] px-4 py-2 rounded-lg font-semibold shadow-sm transition-colors border border-indigo-200 dark:border-slate-700 text-xs flex items-center gap-2"
                >
-                  <Map size={14} /> View Shipment Details
+                  <Map size={14} /> View Auction Details
                </button>
                
                {/* Dropdown Menu on Hover */}
@@ -96,7 +98,7 @@ export default function ShipmentPage({ params }: { params: Promise<{ id: string 
                      <FileText size={14} /> Text Details
                   </button>
                   <button onClick={() => { setDetailsTab('photos'); setDetailsModalOpen(true); }} className="text-left px-3 py-2.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-md transition-colors flex items-center gap-2">
-                     <ImageIcon size={14} /> Cargo Images
+                     <ImageIcon size={14} /> Item Media
                   </button>
                   <button onClick={() => { setDetailsTab('map'); setDetailsModalOpen(true); }} className="text-left px-3 py-2.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-md transition-colors flex items-center gap-2">
                      <Map size={14} /> Live Route Map
@@ -121,7 +123,6 @@ export default function ShipmentPage({ params }: { params: Promise<{ id: string 
             {/* Top Row: Timer & Leaderboard */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-shrink-0">
                <motion.div variants={fadeUp} className="lg:col-span-5 flex flex-col gap-6">
-                 <SellerProfileBadge />
                  <div className="h-[160px] md:h-[200px]">
                    <CountdownTimer />
                  </div>
@@ -159,13 +160,13 @@ export default function ShipmentPage({ params }: { params: Promise<{ id: string 
                className="w-[95vw] max-w-[1600px] h-[90vh] bg-[#faf9f6] dark:bg-zinc-900 border border-zinc-200 dark:border-slate-700/50 rounded-2xl shadow-2xl relative flex flex-col overflow-hidden transition-colors"
              >
                 <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-slate-800 bg-zinc-50 dark:bg-zinc-900">
-                  <h3 className="text-zinc-900 dark:text-slate-300 font-semibold text-sm">Shipment Information & Media</h3>
+                  <h3 className="text-zinc-900 dark:text-slate-300 font-semibold text-sm">Auction Information & Media</h3>
                   <button onClick={() => setDetailsModalOpen(false)} className="p-2 bg-zinc-200 dark:bg-slate-800 hover:bg-zinc-300 dark:hover:bg-slate-700 rounded-full text-zinc-600 dark:text-slate-300 transition-colors">
                      <X size={16} />
                   </button>
                 </div>
                 <div className="flex-1 overflow-auto p-4 bg-[#faf9f6] dark:bg-zinc-900">
-                   <AuctionDetailsView initialTab={detailsTab} />
+                   <AuctionDetailsView initialTab={detailsTab} auction={auction} />
                 </div>
              </motion.div>
           </div>

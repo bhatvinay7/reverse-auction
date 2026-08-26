@@ -18,12 +18,17 @@ export function AuditLedger() {
   });
 
   return (
-    <div className="bg-[#faf9f6] dark:bg-zinc-900 border border-zinc-200 dark:border-slate-700/50 rounded-xl flex flex-col h-full shadow-sm dark:shadow-2xl relative overflow-hidden transition-colors">
-      <div className="p-4 border-b border-zinc-200 dark:border-slate-700/50">
-        <h3 className="text-sm font-semibold text-zinc-900 dark:text-slate-300">Virtualized Stream Audit Ledger</h3>
+    <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl flex flex-col h-full shadow-sm dark:shadow-2xl relative overflow-hidden transition-colors">
+      <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
+        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-300">Virtualized Stream Audit Ledger</h3>
       </div>
       
-      <div className="flex-1 overflow-auto bg-zinc-50 dark:bg-zinc-900 p-4 transition-colors" ref={parentRef}>
+      <div className="flex-1 overflow-y-auto overflow-x-hidden bg-zinc-50 dark:bg-zinc-950 p-4 transition-colors 
+        [&::-webkit-scrollbar]:w-2 
+        [&::-webkit-scrollbar-track]:bg-transparent 
+        [&::-webkit-scrollbar-thumb]:bg-zinc-300 
+        dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700 
+        [&::-webkit-scrollbar-thumb]:rounded-full" ref={parentRef}>
         <div
           style={{
             height: `${rowVirtualizer.getTotalSize()}px`,
@@ -33,12 +38,13 @@ export function AuditLedger() {
         >
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
             const bid = bids[virtualRow.index];
+            if (!bid) return null;
             const isRejected = bid.status === 'rejected';
             const isConfirmed = bid.status === 'confirmed';
             
             const timeStr = `[${format(new Date(bid.timestamp), 'HH:mm:ss')}]`;
             let statusText = '';
-            let textColor = 'text-zinc-800 dark:text-slate-300';
+            let textColor = 'text-zinc-800 dark:text-zinc-300';
 
             if (isRejected) {
               statusText = '(REJECTED: Conflict)';
@@ -70,7 +76,7 @@ export function AuditLedger() {
             );
           })}
           {bids.length === 0 && (
-            <div className="text-zinc-500 dark:text-slate-500 text-xs font-mono italic">No events in the ledger yet...</div>
+            <div className="text-zinc-500 dark:text-zinc-500 text-xs font-mono italic">No events in the ledger yet...</div>
           )}
         </div>
       </div>

@@ -1,48 +1,27 @@
 'use client';
 
-import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Sidebar } from '../../components/Sidebar';
-import { Settings as SettingsIcon, User, BellRing, Shield, CreditCard, Save } from 'lucide-react';
+import { Settings as SettingsIcon, BellRing, Shield, CreditCard, Save } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import clsx from 'clsx';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
-  const [role, setRole] = useState<'seller' | 'bidder'>('seller');
+  const { session } = useAuth();
+  const role = session?.role === 'CUSTOMER' ? 'seller' : 'bidder';
 
   return (
-    <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-900">
+    <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <Sidebar />
-      <main className="flex-1 ml-0 md:ml-64 pt-20 md:pt-8 p-8 max-w-[1000px] mx-auto animate-in fade-in duration-500">
+      <main className="mx-auto min-h-[calc(100dvh-4rem)] w-full max-w-[1000px] flex-1 p-4 pt-8 sm:p-8 animate-in fade-in duration-500">
         
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 flex items-center gap-3">
               <SettingsIcon size={28} className="text-indigo-600 dark:text-indigo-400" /> Platform Settings
             </h1>
-            <p className="text-zinc-500 dark:text-zinc-400 mt-2 font-medium">Manage your {role === 'seller' ? 'Shipper' : 'Carrier'} preferences and security.</p>
-          </div>
-          
-          <div className="bg-[#faf9f6] dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-1 flex shadow-sm">
-            <button
-              onClick={() => setRole('seller')}
-              className={clsx(
-                "px-4 py-1.5 rounded-md text-sm font-semibold transition-colors",
-                role === 'seller' ? "bg-indigo-50 dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
-              )}
-            >
-              View as Seller
-            </button>
-            <button
-              onClick={() => setRole('bidder')}
-              className={clsx(
-                "px-4 py-1.5 rounded-md text-sm font-semibold transition-colors",
-                role === 'bidder' ? "bg-indigo-50 dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
-              )}
-            >
-              View as Bidder
-            </button>
+            <p className="text-zinc-500 dark:text-zinc-400 mt-2 font-medium">Manage your {role === 'seller' ? 'seller' : 'bidder'} preferences and security.</p>
           </div>
         </div>
 

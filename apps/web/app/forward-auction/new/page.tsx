@@ -1,10 +1,11 @@
 import { Package } from 'lucide-react';
 import { NewForwardAuctionForm } from '../../../components/auction/NewForwardAuctionForm';
 import { Sidebar } from '../../../components/Sidebar';
+import { AdminGuard } from '../../../components/AdminGuard';
 
 export default function NewForwardAuctionPage() {
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans selection:bg-blue-500/30">
+    <AdminGuard><div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans selection:bg-blue-500/30">
       
       {/* Sidebar - fixed width */}
       <div className="fixed inset-y-0 left-0 z-50">
@@ -46,6 +47,6 @@ export default function NewForwardAuctionPage() {
           </div>
         </main>
       </div>
-    </div>
+    </div></AdminGuard>
   );
 }
