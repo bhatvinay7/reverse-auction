@@ -72,10 +72,78 @@ jobs:
           sudo install -m 755 kubeseal /usr/local/bin/kubeseal
       - name: Seal Secrets
         env:
-          SECRETS_JSON: ${{ secrets.SECRETS_JSON }}
+          GITOPS_REPO: ${{ secrets.GITOPS_REPO }}
+          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REPLICATION_URL: ${{ secrets.REPLICATION_URL }}
+          CDC_SLOT_NAME: ${{ secrets.CDC_SLOT_NAME }}
+          CDC_PUBLICATION: ${{ secrets.CDC_PUBLICATION }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          ELASTICSEARCH_URL: ${{ secrets.ELASTICSEARCH_URL }}
+          GATEWAY_KEEPER_ADDR: ${{ secrets.GATEWAY_KEEPER_ADDR }}
+          SEARCH_SERVER_ADDR: ${{ secrets.SEARCH_SERVER_ADDR }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GRPC_SERVER_URL: ${{ secrets.GRPC_SERVER_URL }}
+          GATEWAY_KEEPER_GRPC_URL: ${{ secrets.GATEWAY_KEEPER_GRPC_URL }}
+          HTTP_SERVER_URL: ${{ secrets.HTTP_SERVER_URL }}
+          SEARCH_SERVER_GRPC_URL: ${{ secrets.SEARCH_SERVER_GRPC_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          INTERNAL_SIGNING_KEY: ${{ secrets.INTERNAL_SIGNING_KEY }}
+          INVITATION_ENCRYPTION_KEY: ${{ secrets.INVITATION_ENCRYPTION_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+          RAZORPAY_KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
+          NEXT_PUBLIC_RAZORPAY_KEY_ID: ${{ secrets.NEXT_PUBLIC_RAZORPAY_KEY_ID }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SUPPORT_EMAIL: ${{ secrets.SUPPORT_EMAIL }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: ${{ secrets.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME }}
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_SOCKET_URL: ${{ secrets.NEXT_PUBLIC_SOCKET_URL }}
+          NEXT_PUBLIC_WS_URL: ${{ secrets.NEXT_PUBLIC_WS_URL }}
+          NEXT_PUBLIC_WS_BASE_URL: ${{ secrets.NEXT_PUBLIC_WS_BASE_URL }}
+          NEXT_PUBLIC_SEARCH_API_URL: ${{ secrets.NEXT_PUBLIC_SEARCH_API_URL }}
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
+          CLIENT_URL: ${{ secrets.CLIENT_URL }}
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_PROTOCOL: ${{ secrets.OTEL_EXPORTER_OTLP_PROTOCOL }}
+          OTEL_METRIC_EXPORT_INTERVAL: ${{ secrets.OTEL_METRIC_EXPORT_INTERVAL }}
+          LOG_LEVEL: ${{ secrets.LOG_LEVEL }}
+          APP_MODE: ${{ secrets.APP_MODE }}
+          NODE_ENV: ${{ secrets.NODE_ENV }}
+          AUCTION_ENVIRONMENT: ${{ secrets.AUCTION_ENVIRONMENT }}
+          LOCK_WORKER_CONCURRENCY: ${{ secrets.LOCK_WORKER_CONCURRENCY }}
+          KAFKA_BROKERS: ${{ secrets.KAFKA_BROKERS }}
+          KAFKA_SECURITY_PROTOCOL: ${{ secrets.KAFKA_SECURITY_PROTOCOL }}
+          KAFKA_REPLICATION_FACTOR: ${{ secrets.KAFKA_REPLICATION_FACTOR }}
+          KAFKA_BID_PARTITIONS: ${{ secrets.KAFKA_BID_PARTITIONS }}
+          KAFKA_BACKGROUND_PARTITIONS: ${{ secrets.KAFKA_BACKGROUND_PARTITIONS }}
+          KAFKA_SSL_CA_BASE64: ${{ secrets.KAFKA_SSL_CA_BASE64 }}
+          KAFKA_BROKER_CERT_BASE64: ${{ secrets.KAFKA_BROKER_CERT_BASE64 }}
+          KAFKA_BROKER_KEY_BASE64: ${{ secrets.KAFKA_BROKER_KEY_BASE64 }}
+          AUCTION_ACTOR_QUEUE_CAPACITY: ${{ secrets.AUCTION_ACTOR_QUEUE_CAPACITY }}
+          AUCTION_KAFKA_PARTITION_QUEUE_CAPACITY: ${{ secrets.AUCTION_KAFKA_PARTITION_QUEUE_CAPACITY }}
+          DOWNSTREAM_TIMEOUT_SECS: ${{ secrets.DOWNSTREAM_TIMEOUT_SECS }}
+          CIRCUIT_FAILURE_THRESHOLD: ${{ secrets.CIRCUIT_FAILURE_THRESHOLD }}
+          CIRCUIT_OPEN_SECS: ${{ secrets.CIRCUIT_OPEN_SECS }}
+          GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          TEST_REDIS_URL: ${{ secrets.TEST_REDIS_URL }}
+          TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
         run: |
           sudo apt-get update && sudo apt-get install -y python3-yaml
-          eval "$(echo "$SECRETS_JSON" | jq -r 'to_entries | .[] | "export \(.key)=\(.value | @sh)"')"
           python3 scripts/seal-secrets.py ${{ inputs.environment }}
       - name: Commit and push GitOps change
         run: |
