@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
@@ -97,4 +98,3 @@ mod tests {
         assert!(!is_better_bid(AuctionType::Forward, 100.0, 101.0, 0.0));
     }
 }
-use std::collections::HashMap;

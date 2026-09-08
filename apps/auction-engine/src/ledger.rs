@@ -163,7 +163,7 @@ async fn publish_notification(
     if let Err(error) = auction_kafka::publish(
         producer,
         auction_kafka::NOTIFICATION_TOPIC,
-        &auction_id,
+        auction_id,
         notification.as_bytes(),
     )
     .await

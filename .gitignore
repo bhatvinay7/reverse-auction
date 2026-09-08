@@ -43,3 +43,5 @@ auction-k8s
 process.md
 workflow.md
 dataflow.md
+# Local build script
+build-images-sequentially.sh

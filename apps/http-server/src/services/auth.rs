@@ -213,8 +213,7 @@ pub async fn sign_up_service(
         exp: (Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
     };
 
-    let mut header = Header::default();
-    header.alg = jsonwebtoken::Algorithm::HS256;
+    let header = Header { alg: jsonwebtoken::Algorithm::HS256, ..Default::default() };
 
     let token = encode(&header, &claims, &EncodingKey::from_secret(secret.as_ref()))
         .map_err(|_| AppError::InternalServerError("Failed to generate token".into()))?;
@@ -258,8 +257,7 @@ pub async fn sign_in_service(
         exp: (Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
     };
 
-    let mut header = Header::default();
-    header.alg = jsonwebtoken::Algorithm::HS256;
+    let header = Header { alg: jsonwebtoken::Algorithm::HS256, ..Default::default() };
 
     let secret =
         std::env::var("JWT_SECRET").unwrap_or_else(|_| "super_secret_key_change_me".to_string());
@@ -298,8 +296,7 @@ pub async fn forgot_password_service(
             exp: (Utc::now() + chrono::Duration::hours(1)).timestamp() as usize,
         };
 
-        let mut header = Header::default();
-        header.alg = jsonwebtoken::Algorithm::HS256;
+        let header = Header { alg: jsonwebtoken::Algorithm::HS256, ..Default::default() };
         let secret = std::env::var("JWT_SECRET")
             .unwrap_or_else(|_| "super_secret_key_change_me".to_string());
 

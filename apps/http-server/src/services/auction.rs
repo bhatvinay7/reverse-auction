@@ -231,7 +231,7 @@ pub async fn create_auction_service(
             auction_id: new_auction.id,
             idempotency_key: Uuid::new_v4().to_string(), // In reality, coming from client
             state: db::models::ScheduleState::Scheduled,
-            start_time: start_time,
+            start_time,
             retry_count: 0,
         };
 
@@ -248,7 +248,7 @@ pub async fn create_auction_service(
         let new_participant = NewAuctionParticipant {
             id: Uuid::new_v4(),
             auction_id: new_auction.id,
-            user_id: user_id,
+            user_id,
             joined_at: now,
         };
         diesel::insert_into(auction_participants::table)
@@ -486,7 +486,7 @@ pub async fn get_auctions_service(
     let mut media_map: std::collections::HashMap<Uuid, Vec<String>> =
         std::collections::HashMap::new();
     for (sid, url) in media_results {
-        media_map.entry(sid).or_insert_with(Vec::new).push(url);
+        media_map.entry(sid).or_default().push(url);
     }
 
     use db::schema::auction_participants::dsl as ap_dsl;
@@ -663,7 +663,7 @@ pub async fn get_auction_history_service(
     let mut media_map: std::collections::HashMap<Uuid, Vec<String>> =
         std::collections::HashMap::new();
     for (sid, url) in media_results {
-        media_map.entry(sid).or_insert_with(Vec::new).push(url);
+        media_map.entry(sid).or_default().push(url);
     }
 
     use diesel::dsl::count;
@@ -859,18 +859,6 @@ fn normalize_audit_page(limit: Option<i64>, offset: Option<i64>) -> (i64, i64) {
     )
 }
 
-#[cfg(test)]
-mod audit_tests {
-    use super::normalize_audit_page;
-
-    #[test]
-    fn audit_page_is_bounded() {
-        assert_eq!(normalize_audit_page(None, None), (100, 0));
-        assert_eq!(normalize_audit_page(Some(5_000), Some(-10)), (500, 0));
-        assert_eq!(normalize_audit_page(Some(0), Some(25)), (1, 25));
-    }
-}
-
 pub async fn post_auction_discussion_service(
     pool: &diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<PgConnection>>,
     redis_pool: &bb8::Pool<bb8_redis::RedisConnectionManager>,
@@ -979,4 +967,16 @@ pub async fn get_auction_discussion_service(
     }).collect();
 
     Ok(json_results)
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::normalize_audit_page;
+
+    #[test]
+    fn audit_page_is_bounded() {
+        assert_eq!(normalize_audit_page(None, None), (100, 0));
+        assert_eq!(normalize_audit_page(Some(5_000), Some(-10)), (500, 0));
+        assert_eq!(normalize_audit_page(Some(0), Some(25)), (1, 25));
+    }
 }

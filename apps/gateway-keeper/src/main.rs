@@ -29,7 +29,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Support launching from either the workspace root or this crate's directory.
     // Existing process variables always take precedence over values from dotenv files.
     dotenvy::dotenv().ok();
-    dotenvy::from_path(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".env")).ok();
     let _telemetry = auction_observability::init_telemetry("gateway-keeper")?;
     if let Err(error) = run().await {
         auction_observability::report_error(
@@ -45,9 +44,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let state = GatewayState::from_env().await?;
-    let allowed_origin = std::env::var("CORS_ALLOWED_ORIGIN")
-        .unwrap_or_else(|_| "http://localhost:3000".into())
-        .parse::<HeaderValue>()?;
+    let allowed_origins_str = std::env::var("CORS_ALLOWED_ORIGIN")
+        .unwrap_or_else(|_| "http://localhost:3000".into());
+    let allowed_origins: Vec<HeaderValue> = allowed_origins_str
+        .split(',')
+        .map(|s| s.trim().parse::<HeaderValue>().unwrap())
+        .collect();
 
     let app = Router::new()
         .route("/health", get(proxy::health))
@@ -55,18 +57,24 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/socket-ticket", post(websocket_proxy::create_ticket))
         .route("/socket.io", get(websocket_proxy::socket_proxy))
         .route("/socket.io/{*path}", get(websocket_proxy::socket_proxy))
+        .route("/api/search", any(proxy::search_proxy))
         .route("/api/{*path}", any(proxy::http_proxy))
         .with_state(state)
         .layer(DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()
-                .allow_origin(AllowOrigin::exact(allowed_origin))
+                .allow_origin(AllowOrigin::list(allowed_origins))
                 .allow_credentials(true)
                 .allow_headers([
                     header::ACCEPT,
                     header::AUTHORIZATION,
                     header::CONTENT_TYPE,
+                    header::ORIGIN,
+                    header::HOST,
+                    header::COOKIE,
+                    axum::http::header::HeaderName::from_static("x-requested-with"),
+                    axum::http::header::HeaderName::from_static("x-auth-token"),
                 ])
                 .allow_methods([
                     Method::GET,
