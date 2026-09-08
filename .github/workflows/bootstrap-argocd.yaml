@@ -67,7 +67,7 @@ jobs:
         run: kubectl rollout status -n kube-system deploy/sealed-secrets-controller --timeout=90s
       - name: Install kubeseal
         run: |
-          KUBESEAL_VERSION=$(curl -s https://api.github.com/repos/bitnami-labs/sealed-secrets/tags | jq -r '.[0].name' | cut -c 2-)
+          KUBESEAL_VERSION="0.27.3"
           curl -L "https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/kubeseal-${KUBESEAL_VERSION}-linux-amd64.tar.gz" | tar xz
           sudo install -m 755 kubeseal /usr/local/bin/kubeseal
       - name: Seal Secrets
