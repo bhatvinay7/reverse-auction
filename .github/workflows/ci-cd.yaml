@@ -28,6 +28,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Install OS dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config libssl-dev libcurl4-openssl-dev libsasl2-dev zlib1g-dev libzstd-dev
       - name: Check Rust workspace
         run: cargo check --workspace --all-targets --locked
       - name: Test auction engine and gateway
