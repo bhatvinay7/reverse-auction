@@ -52,7 +52,11 @@ jobs:
         run: |
           test -n "$KUBE_CONFIG"
           mkdir -p "$RUNNER_TEMP/kube"
-          printf '%s' "$KUBE_CONFIG" | base64 --decode > "$RUNNER_TEMP/kube/config"
+          printf '%s' "$KUBE_CONFIG" | base64 --decode > "$RUNNER_TEMP/kube/config" 2>/dev/null || true
+          if [ ! -s "$RUNNER_TEMP/kube/config" ]; then
+            echo "Falling back to raw YAML for KUBE_CONFIG..."
+            printf '%s' "$KUBE_CONFIG" > "$RUNNER_TEMP/kube/config"
+          fi
           chmod 600 "$RUNNER_TEMP/kube/config"
           echo "KUBECONFIG=$RUNNER_TEMP/kube/config" >> "$GITHUB_ENV"
           export KUBECONFIG="$RUNNER_TEMP/kube/config"
