@@ -15,11 +15,14 @@ pub const BID_DECISION_TOPIC: &str = "auction-bid-decisions";
 pub const NOTIFICATION_TOPIC: &str = "auction-notifications";
 pub const SYNC_TOPIC: &str = "auction-sync";
 pub const DLQ_TOPIC: &str = "auction-dlq";
+pub const CDC_AUCTIONS_TOPIC: &str = "cdc-auctions";
+pub const CDC_AUCTION_LISTINGS_TOPIC: &str = "cdc-auction-listings";
 
 pub const ENGINE_GROUP: &str = "auction-engine";
 pub const BID_AUDIT_GROUP: &str = "auction-bid-audit-worker";
 pub const NOTIFICATION_GROUP: &str = "auction-notification-worker";
 pub const SYNC_GROUP: &str = "auction-sync-worker";
+pub const SEARCH_SERVER_GROUP: &str = "auction-search-server";
 
 fn load_workspace_env() {
     let Ok(current_dir) = env::current_dir() else {
@@ -181,6 +184,20 @@ pub async fn ensure_topics() -> Result<(), String> {
         )
         .set("cleanup.policy", "delete")
         .set("retention.ms", &dlq_retention),
+        NewTopic::new(
+            CDC_AUCTIONS_TOPIC,
+            background_partitions,
+            TopicReplication::Fixed(replicas),
+        )
+        .set("cleanup.policy", "delete")
+        .set("retention.ms", &sync_retention),
+        NewTopic::new(
+            CDC_AUCTION_LISTINGS_TOPIC,
+            background_partitions,
+            TopicReplication::Fixed(replicas),
+        )
+        .set("cleanup.policy", "delete")
+        .set("retention.ms", &sync_retention),
     ];
     let results = admin
         .create_topics(&topics, &AdminOptions::new())

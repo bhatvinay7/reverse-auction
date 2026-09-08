@@ -12,5 +12,7 @@ members = [
     "packages/grpc-client",
     "apps/notification-worker",
     "apps/gateway-keeper",
+    "apps/cdc-worker",
+    "apps/search-server",
 ]
 resolver = "2"
