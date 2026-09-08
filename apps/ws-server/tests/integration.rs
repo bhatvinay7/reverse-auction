@@ -29,6 +29,4 @@ async fn test_ws_server_redis_pubsub_handling() {
         .publish(&channel_name, payload)
         .await
         .expect("Failed to publish to redis");
-
-    assert!(true);
 }

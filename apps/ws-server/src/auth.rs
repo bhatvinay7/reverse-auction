@@ -72,8 +72,8 @@ pub async fn validate_auction_state<C: redis::AsyncCommands>(
         if let Ok(state_json) = serde_json::from_str::<Value>(&s) {
             // Read auction_start_time from the shipment (the actual bidding window),
             // not from schedule.start_time (which is the scheduler trigger time).
-            if let Some(schedule) = state_json.get("schedule") {
-                if let Some(start_time_str) = schedule.get("start_time").and_then(|st| st.as_str())
+            if let Some(schedule) = state_json.get("schedule")
+                && let Some(start_time_str) = schedule.get("start_time").and_then(|st| st.as_str())
                 {
                     let st_str = start_time_str.trim_end_matches('Z');
                     let start_time =
@@ -86,7 +86,6 @@ pub async fn validate_auction_state<C: redis::AsyncCommands>(
                         auction_start_time_ms = st.and_utc().timestamp_millis();
                     }
                 }
-            }
 
             if let Some(auction) = state_json
                 .get("auction")

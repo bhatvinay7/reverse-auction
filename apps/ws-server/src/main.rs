@@ -79,15 +79,15 @@ async fn on_connect<A: Adapter>(
                 "Auction {} not initialized yet or has expired. Allowing connection to wait.",
                 auction_id
             );
-            let _ = socket.join(auction_id.clone());
+            socket.join(auction_id.clone());
             return;
         }
     }
 
     let mut user_id_str = auth.user_id.unwrap_or_default();
 
-    if let Some(token) = auth.token {
-        if !token.is_empty() {
+    if let Some(token) = auth.token
+        && !token.is_empty() {
             let secret = std::env::var("JWT_SECRET")
                 .unwrap_or_else(|_| "super_secret_key_change_me".to_string());
             if let Ok(token_data) = jsonwebtoken::decode::<Claims>(
@@ -100,7 +100,6 @@ async fn on_connect<A: Adapter>(
                 println!("[ws-server] Invalid or expired JWT token provided in connection payload");
             }
         }
-    }
 
     let is_participant =
         match auth::validate_participant(&mut *redis_conn, &auction_id, &user_id_str).await {
@@ -145,7 +144,7 @@ async fn on_connect<A: Adapter>(
     }
 
     // Join room
-    let _ = socket.join(auction_id.clone());
+    socket.join(auction_id.clone());
 
     // 2. Fetch ZSET and emit auction_init
     let zset_key = auction_redis::format_zset_key(&auction_id);
@@ -401,9 +400,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         let mut stream = redis_pubsub.on_message();
         while let Some(msg) = stream.next().await {
-            if let Ok(payload_str) = msg.get_payload::<String>() {
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&payload_str) {
-                    if let (Some(auction_id), Some(payload)) =
+            if let Ok(payload_str) = msg.get_payload::<String>()
+                && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&payload_str)
+                    && let (Some(auction_id), Some(payload)) =
                         (parsed["auction_id"].as_str(), parsed.get("payload"))
                     {
                         match io_clone.of("/") {
@@ -429,8 +428,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                             ),
                         }
                     }
-                }
-            }
         }
     });
 

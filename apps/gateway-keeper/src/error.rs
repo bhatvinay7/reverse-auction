@@ -65,11 +65,10 @@ impl IntoResponse for GatewayError {
             Json(json!({"code": self.code, "message": self.message})),
         )
             .into_response();
-        if let Some(seconds) = self.retry_after {
-            if let Ok(value) = HeaderValue::from_str(&seconds.to_string()) {
+        if let Some(seconds) = self.retry_after
+            && let Ok(value) = HeaderValue::from_str(&seconds.to_string()) {
                 response.headers_mut().insert(RETRY_AFTER, value);
             }
-        }
         response
     }
 }

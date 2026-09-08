@@ -407,7 +407,7 @@ async fn test_join_auction_success() {
 
     // Join the auction
     let req_join = Request::builder()
-        .uri(&format!("/api/auction/{}/join", auction_id))
+        .uri(format!("/api/auction/{}/join", auction_id))
         .method("POST")
         .header(header::CONTENT_TYPE, "application/json")
         .header("Authorization", format!("Bearer {}", token))
