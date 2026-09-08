@@ -17,7 +17,6 @@ COPY apps/web/package.json ./apps/web/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
 COPY packages/ui/package.json ./packages/ui/
-COPY packages/db/package.json ./packages/db/
 RUN bun install
 COPY . .
 RUN bun --cwd apps/web run build
