@@ -142,6 +142,20 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           TEST_REDIS_URL: ${{ secrets.TEST_REDIS_URL }}
           TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+          ARGOCD_HOST: ${{ secrets.ARGOCD_HOST }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GRAFANA_HOST: ${{ secrets.GRAFANA_HOST }}
+          GRPC_URL: ${{ secrets.GRPC_URL }}
+          HTTP_PORT: ${{ secrets.HTTP_PORT }}
+          HTTP_SERVER_ADDR: ${{ secrets.HTTP_SERVER_ADDR }}
+          PORT: ${{ secrets.PORT }}
+          REDIS_EXPORTER_ADDR: ${{ secrets.REDIS_EXPORTER_ADDR }}
+          RUST_LOG: ${{ secrets.RUST_LOG }}
+          WEB_HOSTNAME: ${{ secrets.WEB_HOSTNAME }}
+          WEB_PORT: ${{ secrets.WEB_PORT }}
+          WS_SERVER_ADDR: ${{ secrets.WS_SERVER_ADDR }}
+          WS_SERVER_URL: ${{ secrets.WS_SERVER_URL }}
         run: |
           sudo apt-get update && sudo apt-get install -y python3-yaml
           python3 scripts/seal-secrets.py ${{ inputs.environment }}
