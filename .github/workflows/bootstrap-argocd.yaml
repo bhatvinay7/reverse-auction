@@ -142,6 +142,8 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           TEST_REDIS_URL: ${{ secrets.TEST_REDIS_URL }}
           TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+          CORS_ALLOWED_ORIGIN: ${{ secrets.CORS_ALLOWED_ORIGIN }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
           ARGOCD_HOST: ${{ secrets.ARGOCD_HOST }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
