@@ -59,6 +59,28 @@ jobs:
           kubectl cluster-info
       - name: Install Sealed Secrets controller
         run: kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/latest/download/controller.yaml
+      - name: Wait for Sealed Secrets controller
+        run: kubectl rollout status -n kube-system deploy/sealed-secrets-controller --timeout=90s
+      - name: Install kubeseal
+        run: |
+          KUBESEAL_VERSION=$(curl -s https://api.github.com/repos/bitnami-labs/sealed-secrets/tags | jq -r '.[0].name' | cut -c 2-)
+          curl -L "https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/kubeseal-${KUBESEAL_VERSION}-linux-amd64.tar.gz" | tar xz
+          sudo install -m 755 kubeseal /usr/local/bin/kubeseal
+      - name: Seal Secrets
+        env:
+          SECRETS_JSON: ${{ secrets.SECRETS_JSON }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y python3-yaml
+          eval "$(echo "$SECRETS_JSON" | jq -r 'to_entries | .[] | "export \(.key)=\(.value | @sh)"')"
+          python3 scripts/seal-secrets.py ${{ inputs.environment }}
+      - name: Commit and push GitOps change
+        run: |
+          git config user.name "auction-delivery[bot]"
+          git config user.email "auction-delivery[bot]@users.noreply.github.com"
+          git add .
+          git diff --cached --quiet && exit 0
+          git commit -m "chore(secrets): seal secrets and update hosts for ${{ inputs.environment }}"
+          git push origin HEAD:${{ inputs.environment == 'dev' && 'deployment' || 'main' }}
       - name: Install Argo CD and deploy the Strimzi Helm Application
         shell: bash
         run: |
