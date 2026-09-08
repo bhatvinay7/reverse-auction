@@ -126,6 +126,9 @@ services:
       <<: *service-environment
       AUCTION_ACTOR_QUEUE_CAPACITY: "1000"
       AUCTION_KAFKA_PARTITION_QUEUE_CAPACITY: "1000"
+    depends_on:
+      grpc:
+        condition: service_started
     cpus: 0.75
     mem_limit: 384m
     mem_reservation: 160m
@@ -147,6 +150,9 @@ services:
       FRONTEND_URL: http://localhost:3000
     ports:
       - "8082:8082"
+    depends_on:
+      auction-engine:
+        condition: service_started
     cpus: 0.50
     mem_limit: 320m
     mem_reservation: 128m
@@ -168,11 +174,9 @@ services:
       WS_SERVER_ADDR: "0.0.0.0:8081"
     ports:
       - "8081:8081"
-    # depends_on:
-    #   grpc:
-    #     condition: service_started
-    #   redis:
-    #     condition: service_healthy
+    depends_on:
+      http-server:
+        condition: service_started
     cpus: 0.35
     mem_limit: 224m
     mem_reservation: 96m
@@ -190,6 +194,7 @@ services:
       INTERNAL_SIGNING_KEY: test-only-internal-signing-key-with-32-bytes
       HTTP_SERVER_URL: http://http-server:8082
       WS_SERVER_URL: http://ws-server:8081
+      SEARCH_SERVER_URL: http://search-server:8084
       CORS_ALLOWED_ORIGIN: http://localhost:3000
       DOWNSTREAM_TIMEOUT_SECS: "15"
       CIRCUIT_FAILURE_THRESHOLD: "5"
@@ -197,8 +202,6 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      http-server:
-        condition: service_started
       ws-server:
         condition: service_started
     cpus: 0.35
@@ -218,6 +221,9 @@ services:
         REDIS_URL: ${REDIS_URL:?set REDIS_URL to the cloud Redis URL}
     environment:
       <<: *service-environment
+    depends_on:
+      gateway-keeper:
+        condition: service_started
     cpus: 0.25
     mem_limit: 160m
     mem_reservation: 64m
@@ -235,9 +241,54 @@ services:
         REDIS_URL: ${REDIS_URL:?set REDIS_URL to the cloud Redis URL}
     environment:
       <<: *service-environment
+    depends_on:
+      scheduler:
+        condition: service_started
     cpus: 0.25
     mem_limit: 192m
     mem_reservation: 80m
+
+  cdc-worker:
+    <<: *app-defaults
+    env_file:
+      - .env
+      - apps/cdc-worker/.env
+    build:
+      context: .
+      dockerfile: apps/cdc-worker/Dockerfile
+      args:
+        DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the cloud Postgres URL}
+    environment:
+      <<: *service-environment
+    depends_on:
+      notification-worker:
+        condition: service_started
+    cpus: 0.25
+    mem_limit: 160m
+    mem_reservation: 64m
+
+  search-server:
+    <<: *app-defaults
+    env_file:
+      - .env
+      - apps/search-server/.env
+    build:
+      context: .
+      dockerfile: apps/search-server/Dockerfile
+      args:
+        DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL to the cloud Postgres URL}
+        REDIS_URL: ${REDIS_URL:?set REDIS_URL to the cloud Redis URL}
+    environment:
+      <<: *service-environment
+      SEARCH_SERVER_ADDR: "0.0.0.0:8084"
+    ports:
+      - "8084:8084"
+    depends_on:
+      cdc-worker:
+        condition: service_started
+    cpus: 0.35
+    mem_limit: 224m
+    mem_reservation: 96m
 
   # web:
   #   <<: *app-defaults
@@ -258,7 +309,7 @@ services:
   #   ports:
   #     - "3000:3000"
   #   depends_on:
-  #     gateway-keeper:
+  #     search-server:
   #       condition: service_started
   #   cpus: 0.35
   #   mem_limit: 256m
