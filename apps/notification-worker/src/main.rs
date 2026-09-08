@@ -789,8 +789,8 @@ async fn run_sync_worker(
                 continue;
             }
 
-            if !new_bids.is_empty() {
-                if let Err(e) = diesel::insert_into(bids::table)
+            if !new_bids.is_empty()
+                && let Err(e) = diesel::insert_into(bids::table)
                     .values(&new_bids)
                     .on_conflict_do_nothing()
                     .execute(&mut db_conn)
@@ -811,7 +811,6 @@ async fn run_sync_worker(
                     tokio::time::sleep(std::time::Duration::from_secs(attempts as u64 * 2)).await;
                     continue;
                 }
-            }
 
             // 4. Atomically delete all per-auction Redis artifacts.
             //    Redis DEL / HDEL / ZREM on non-existent keys always return 0 — never an error.
@@ -831,7 +830,7 @@ async fn run_sync_worker(
                 .del(format!(
                     "{}:{}",
                     auction_redis::AUCTION_PARTICIPANTS_PREFIX,
-                    &auction_id_str
+                    auction_id_str
                 ))
                 .query_async(&mut *con)
                 .await;

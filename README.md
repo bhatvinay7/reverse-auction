@@ -73,6 +73,8 @@ Kafka is intentionally behind gRPC ingestion, not Gateway Keeper. Gateway Keeper
 | Web | Responsive marketplace, discovery, auction room, dashboard, and admin UI | Stateless replicas/CDN |
 | Gateway Keeper | JWT validation, IP/user throttling, circuit breakers, signed identity, socket tickets, and HTTP/WebSocket proxying | Horizontal replicas; Redis shares counters |
 | HTTP server | Authentication, auction CRUD, participants, media metadata, and database reads | Stateless replicas |
+| Search server | Subscribes to CDC Kafka topics, generates embeddings, and exposes Elasticsearch endpoints | Stateless replicas |
+| CDC worker | Captures Postgres logical replication events and produces JSON payloads to Kafka topics | Single replica per slot |
 | Socket server | Auction rooms, participant checks, bid transport, and live fan-out | Replicas share the Redis Socket.IO adapter |
 | gRPC ingestion | Validates bid envelopes and appends idempotent, keyed Kafka records | Stateless producer replicas |
 | Kafka | Durable ordered bid log, notification/sync work, replay, and consumer-group assignment | Partition count limits useful consumer parallelism |
@@ -152,19 +154,9 @@ Network policy should prevent public access to HTTP, WebSocket, gRPC, Redis, Pos
 
 ## Kubernetes: Strimzi and KRaft
 
-`auction-k8s` follows the `zerocopy-gitops` deployment pattern:
+`auction-k8s` uses a shared branch-selected Argo chart and one active environment per cluster. Controllers reconcile before sealed secrets, infrastructure, and individually ordered application servers. Both environments use one Strimzi KRaft broker/controller for the small test profile, with persistent storage and five declarative topics. The internal TLS listener is `auction-kafka-kafka-bootstrap.kafka.svc.cluster.local:9093`; GitHub Environment secrets supply the broker certificate/private key and matching client CA.
 
-- Argo CD deploys the Strimzi `0.43.0` Helm chart in sync wave `-1`;
-- the infrastructure Application follows in wave `0` and creates Kafka `3.8.0` in KRaft mode;
-- application workloads follow in wave `1`;
-- development uses one dual-role broker/controller and replication factor `1`;
-- production uses three dual-role nodes, replication factor `3`, and minimum ISR `2`;
-- persistent volumes set `deleteClaim: false`;
-- Strimzi’s Topic Operator reconciles the five fixed `KafkaTopic` resources;
-- bootstrap validates the pinned Helm chart, waits for Strimzi/Kafka readiness, and runs an idempotent `--if-not-exists` topic guard;
-- only the internal bootstrap listener is enabled at `auction-kafka-kafka-bootstrap.kafka.svc:9092`.
-
-The production three-node setup tolerates one broker outage for acknowledged writes. KRaft removes ZooKeeper, but it does not remove the need to monitor controller quorum, under-replicated partitions, ISR shrinkage, disk capacity, consumer lag, and rebalance duration.
+Redis runs one primary and two read replicas. PostgreSQL uses a cloud URL. This test profile has no Kafka broker redundancy or automatic Redis primary promotion. See [the GitOps guide](auction-k8s/README.md) for resource budgets, bootstrap, secret inputs, domains, monitoring and existing-cluster migration constraints.
 
 ## Production observability
 
@@ -219,7 +211,7 @@ larger durable history      -> PostgreSQL partitioning/read replicas + object ar
 
 Scale engines from Kafka consumer lag and decision latency, not CPU alone. Also monitor per-actor inbox depth, Redis script latency, socket fan-out delay, DLQ growth, and PostgreSQL finalization lag. During engine scale-down, stop readiness first and allow the consumer to leave the group; uncommitted records are replayed by the new partition owner.
 
-PostgreSQL remains the long-term system of record. The production CronJob runs `pg_dump -F c` daily and uploads a checksum-verified backup to a private, environment/region-scoped Cloudflare R2 path. A daily dump alone permits roughly 24 hours of data loss, so production should add WAL archiving or managed point-in-time recovery and immutable/versioned object retention.
+PostgreSQL remains the long-term system of record and is hosted in the cloud. The custom PostgreSQL deployment and in-cluster backup CronJob are removed; configure backup retention and point-in-time recovery with the database provider.
 
 Recovery sequence:
 
@@ -287,10 +279,12 @@ packages/db               Diesel schema, migrations, and two-month demo data
 packages/redis            cluster-safe key conventions and pools
 packages/kafka            Kafka clients, topics, producer, and consumer defaults
 packages/observability    OpenTelemetry setup plus structured error/panic events
+apps/cdc-worker           logical replication CDC from Postgres to Kafka
+apps/search-server        Kafka consumer and Elasticsearch embedding search API
 auction-k8s               Argo CD, Strimzi, KRaft, and application GitOps state
 ```
 
-CI builds and scans the eight application images. Development delivery updates the `dev` branch of `bhatvinay7/auction-k8s`; production promotion resolves tested tags to immutable digests and opens a GitOps pull request. No deployment should require a direct edit in a running cluster.
+CI checks and builds all eight application images. Pushes to `deployment` update GitOps `deployment`; pushes to `main` update GitOps `main` with immutable image digests. Each build embeds the matching frontend URLs, and delivery commits environment-specific SealedSecrets.
 
 
 <!-- hyper liquid and memcoin -->

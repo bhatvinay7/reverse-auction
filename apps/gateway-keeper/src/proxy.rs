@@ -80,6 +80,34 @@ pub async fn http_proxy(
     .await
 }
 
+pub async fn search_proxy(
+    State(state): State<GatewayState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    OriginalUri(uri): OriginalUri,
+    method: Method,
+    mut headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, GatewayError> {
+    state
+        .limiter
+        .check(&format!("ip:{}", peer.ip()), 240, Duration::from_secs(60))
+        .await?;
+    InternalSigner::strip_untrusted(&mut headers);
+
+    proxy_http(
+        &state,
+        &state.search_server_url,
+        &state.search_breaker,
+        method,
+        uri.path_and_query()
+            .map(|value| value.as_str())
+            .unwrap_or(uri.path()),
+        headers,
+        body,
+    )
+    .await
+}
+
 pub async fn proxy_http(
     state: &GatewayState,
     base_url: &str,
