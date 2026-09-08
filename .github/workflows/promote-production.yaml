@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       commit_sha:
-        description: Full application commit SHA already built on dev
+        description: Full application commit SHA already built on deployment
         required: true
       confirm:
         description: Type PROMOTE to create the production GitOps pull request
