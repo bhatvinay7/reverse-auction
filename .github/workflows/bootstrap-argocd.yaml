@@ -55,6 +55,7 @@ jobs:
           printf '%s' "$KUBE_CONFIG" | base64 --decode > "$RUNNER_TEMP/kube/config"
           chmod 600 "$RUNNER_TEMP/kube/config"
           echo "KUBECONFIG=$RUNNER_TEMP/kube/config" >> "$GITHUB_ENV"
+          export KUBECONFIG="$RUNNER_TEMP/kube/config"
           kubectl cluster-info
       - name: Install Sealed Secrets controller
         run: kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/latest/download/controller.yaml
