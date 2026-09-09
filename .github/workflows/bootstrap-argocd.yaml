@@ -309,6 +309,49 @@ jobs:
               'data': {key: base64.b64encode(value.encode()).decode() for key, value in values.items()}}))
           PYREPO
           kubectl wait -n argocd sealedsecret/auction-gitops-repository --for=condition=Synced --timeout=5m
+      - name: Create kafka-broker-tls secret from base64 secrets
+        env:
+          KAFKA_SSL_CA_BASE64: ${{ secrets.KAFKA_SSL_CA_BASE64 }}
+          KAFKA_BROKER_CERT_BASE64: ${{ secrets.KAFKA_BROKER_CERT_BASE64 }}
+          KAFKA_BROKER_KEY_BASE64: ${{ secrets.KAFKA_BROKER_KEY_BASE64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KAFKA_SSL_CA_BASE64"     || { echo "KAFKA_SSL_CA_BASE64 is required";     exit 1; }
+          test -n "$KAFKA_BROKER_CERT_BASE64" || { echo "KAFKA_BROKER_CERT_BASE64 is required"; exit 1; }
+          test -n "$KAFKA_BROKER_KEY_BASE64"  || { echo "KAFKA_BROKER_KEY_BASE64 is required";  exit 1; }
+
+          # Decode the base64 PEMs into temp files (never written to the checkout).
+          CA_FILE="$RUNNER_TEMP/kafka-ca.crt"
+          CERT_FILE="$RUNNER_TEMP/kafka-tls.crt"
+          KEY_FILE="$RUNNER_TEMP/kafka-tls.key"
+          printf '%s' "$KAFKA_SSL_CA_BASE64"      | base64 --decode > "$CA_FILE"
+          printf '%s' "$KAFKA_BROKER_CERT_BASE64"  | base64 --decode > "$CERT_FILE"
+          printf '%s' "$KAFKA_BROKER_KEY_BASE64"   | base64 --decode > "$KEY_FILE"
+
+          # Validate the decoded PEMs are well-formed.
+          openssl x509 -in "$CA_FILE"   -noout
+          openssl x509 -in "$CERT_FILE" -noout
+          openssl rsa  -in "$KEY_FILE"  -check -noout
+
+          # Ensure the kafka namespace exists before creating the secret.
+          kubectl create namespace kafka --dry-run=client -o yaml | kubectl apply -f -
+
+          # Create (or idempotently replace) the kafka-broker-tls TLS secret that
+          # Strimzi reads for the broker's TLS listener cert/key. Using --from-file
+          # keeps the raw bytes; the ca.crt is included so clients can verify the
+          # broker certificate chain without a separate CA secret.
+          kubectl create secret generic kafka-broker-tls \
+            --namespace kafka \
+            --from-file=tls.crt="$CERT_FILE" \
+            --from-file=tls.key="$KEY_FILE" \
+            --from-file=ca.crt="$CA_FILE" \
+            --type=kubernetes.io/tls \
+            --save-config \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "kafka-broker-tls secret applied to namespace kafka."
+          rm -f "$CA_FILE" "$CERT_FILE" "$KEY_FILE"
       - name: Deploy GitOps root and Strimzi Application
         shell: bash
         run: |
@@ -316,6 +359,7 @@ jobs:
           helm template auction-root argocd/chart \
             --show-only templates/strimzi-application.yaml | kubectl apply -f -
           python3 scripts/render-argocd-root.py ${{ inputs.environment == 'dev' && 'deployment' || 'main' }} | kubectl apply -f -
+
       - name: Wait for Strimzi and the KRaft cluster
         shell: bash
         run: |

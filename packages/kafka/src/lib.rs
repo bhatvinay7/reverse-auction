@@ -73,13 +73,33 @@ fn client_config() -> ClientConfig {
         }
     }
 
-    if let Ok(encoded_ca) = env::var("KAFKA_SSL_CA_BASE64") {
-        let ca_bytes = STANDARD
-            .decode(encoded_ca.trim())
-            .expect("KAFKA_SSL_CA_BASE64 must be valid base64");
-        let ca_pem = String::from_utf8(ca_bytes)
-            .expect("KAFKA_SSL_CA_BASE64 must decode to a UTF-8 CA certificate");
-        config.set("ssl.ca.pem", ca_pem);
+    // Decode the three TLS PEM blobs that are stored as base64 in the
+    // environment (sealed in Kubernetes; raw in .env for local dev).
+    for (env_var, kafka_prop, label) in [
+        (
+            "KAFKA_SSL_CA_BASE64",
+            "ssl.ca.pem",
+            "KAFKA_SSL_CA_BASE64",
+        ),
+        (
+            "KAFKA_BROKER_CERT_BASE64",
+            "ssl.certificate.pem",
+            "KAFKA_BROKER_CERT_BASE64",
+        ),
+        (
+            "KAFKA_BROKER_KEY_BASE64",
+            "ssl.key.pem",
+            "KAFKA_BROKER_KEY_BASE64",
+        ),
+    ] {
+        if let Ok(encoded) = env::var(env_var) {
+            let bytes = STANDARD
+                .decode(encoded.trim())
+                .unwrap_or_else(|_| panic!("{label} must be valid base64"));
+            let pem = String::from_utf8(bytes)
+                .unwrap_or_else(|_| panic!("{label} must decode to a UTF-8 PEM"));
+            config.set(kafka_prop, pem);
+        }
     }
 
     config
