@@ -41,8 +41,7 @@ jobs:
           helm template strimzi-kafka-operator strimzi/strimzi-kafka-operator \
             --version 0.43.0 \
             --namespace kafka \
-            --set watchAnyNamespace=true \
-            --set featureGates=+UseKRaft >/dev/null
+            --set watchAnyNamespace=false >/dev/null
           helm repo add fluent https://fluent.github.io/helm-charts/
           helm repo update fluent
           awk '/^      values: \|/{values=1; next} values {sub(/^        /, ""); print}' \
@@ -328,6 +327,20 @@ jobs:
             kubectl get deployments,pods -n kafka || true
           }
           trap diagnostics ERR
+          # Surface the operator's sync failure while waiting, not only at timeout.
+          strimzi_status() {
+            kubectl get application auction-strimzi -n argocd -o json --request-timeout=30s | python3 -c '
+          import json, sys
+          status = json.load(sys.stdin).get("status", {})
+          print("Strimzi Application: sync=" + status.get("sync", {}).get("status", "Pending") +
+                ", health=" + status.get("health", {}).get("status", "Pending"))
+          for condition in status.get("conditions", []):
+              print(condition.get("type", "Condition") + ": " + condition.get("message", ""))
+          operation = status.get("operationState", {})
+          if operation.get("phase") in ("Failed", "Error"):
+              print("Sync " + operation["phase"] + ": " + operation.get("message", ""))
+          '
+          }
           # Argo CD reconciles asynchronously. A condition wait alone fails with
           # NotFound until the CRD, operator and Kafka resource have been created.
           wait_for_resource() {
@@ -335,12 +348,17 @@ jobs:
             shift
             local deadline=$((SECONDS + 900))
             local found
+            local attempt=0
             while (( SECONDS < deadline )); do
               found=$(kubectl get "$resource" "$@" --ignore-not-found -o name --request-timeout=30s)
               if [ -n "$found" ]; then
                 return 0
               fi
               echo "Waiting for Argo CD to create $resource..."
+              if (( attempt % 6 == 0 )); then
+                strimzi_status
+              fi
+              attempt=$((attempt + 1))
               sleep 10
             done
             echo "Timed out waiting for $resource; inspect Argo CD sync diagnostics below."
