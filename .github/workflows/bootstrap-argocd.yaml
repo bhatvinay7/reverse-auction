@@ -254,6 +254,26 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m "chore(secrets): seal secrets and update hosts for ${{ inputs.environment }}"
           git push origin HEAD:${{ inputs.environment == 'dev' && 'deployment' || 'main' }}
+      - name: Preinstall pinned Strimzi CRDs
+        shell: bash
+        run: |
+          # This chart includes CRDs in both crds/ and templates/.
+          helm template strimzi-kafka-operator strimzi/strimzi-kafka-operator \
+            --version 0.43.0 --namespace kafka --include-crds > "$RUNNER_TEMP/strimzi.yaml"
+          python3 - "$RUNNER_TEMP/strimzi.yaml" <<'PYCRDS' > "$RUNNER_TEMP/strimzi-crds.yaml"
+          import sys, yaml
+          with open(sys.argv[1]) as source:
+              crds = [doc for doc in yaml.safe_load_all(source)
+                      if doc and doc.get('kind') == 'CustomResourceDefinition']
+          names = {doc['metadata']['name'] for doc in crds}
+          required = {'kafkas.kafka.strimzi.io', 'kafkanodepools.kafka.strimzi.io',
+                      'kafkatopics.kafka.strimzi.io', 'strimzipodsets.core.strimzi.io'}
+          if not required <= names:
+              sys.exit('Pinned chart is missing required Strimzi CRDs')
+          yaml.safe_dump_all(crds, sys.stdout)
+          PYCRDS
+          kubectl apply --server-side -f "$RUNNER_TEMP/strimzi-crds.yaml"
+          kubectl wait --for=condition=Established -f "$RUNNER_TEMP/strimzi-crds.yaml" --timeout=5m
       - name: Install Argo CD and deploy the Strimzi Helm Application
         shell: bash
         run: |
@@ -270,6 +290,32 @@ jobs:
           done
           kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=10m
           kubectl apply -f argocd/argocd-health-config.yaml
+      - name: Configure Argo CD GitOps repository access
+        env:
+          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+        shell: bash
+        run: |
+          # Pass the credential through stdin; never write plaintext to the checkout.
+          python3 - <<'PYREPO' | kubeseal --controller-name sealed-secrets-controller --controller-namespace kube-system --cert "$SEALED_SECRETS_CERT_FILE" --format json | kubectl apply --server-side -f -
+          import base64, json, os, sys
+          token = os.environ.get('GITOPS_TOKEN', '')
+          if not token:
+              sys.exit('GITOPS_TOKEN is required for Argo CD repository access')
+          values = {'type': 'git', 'url': 'https://github.com/bhatvinay7/auction-k8s.git',
+                    'username': 'x-access-token', 'password': token}
+          print(json.dumps({'apiVersion': 'v1', 'kind': 'Secret',
+              'metadata': {'name': 'auction-gitops-repository', 'namespace': 'argocd',
+                           'labels': {'argocd.argoproj.io/secret-type': 'repository'}},
+              'type': 'Opaque',
+              'data': {key: base64.b64encode(value.encode()).decode() for key, value in values.items()}}))
+          PYREPO
+          kubectl wait -n argocd sealedsecret/auction-gitops-repository --for=condition=Synced --timeout=5m
+      - name: Deploy GitOps root and Strimzi Application
+        shell: bash
+        run: |
+          # Start the operator independently of root-chart repository reconciliation.
+          helm template auction-root argocd/chart \
+            --show-only templates/strimzi-application.yaml | kubectl apply -f -
           python3 scripts/render-argocd-root.py ${{ inputs.environment == 'dev' && 'deployment' || 'main' }} | kubectl apply -f -
       - name: Wait for Strimzi and the KRaft cluster
         shell: bash
