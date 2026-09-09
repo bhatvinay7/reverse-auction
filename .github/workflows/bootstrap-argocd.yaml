@@ -210,7 +210,8 @@ jobs:
         shell: bash
         run: |
           kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+          # Server-side apply avoids storing large CRDs in the last-applied annotation.
+          kubectl apply --server-side -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
           kubectl rollout status deployment/argocd-server -n argocd --timeout=10m
           kubectl rollout status deployment/argocd-repo-server -n argocd --timeout=10m
           kubectl apply -f argocd/argocd-health-config.yaml
