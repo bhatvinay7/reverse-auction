@@ -325,9 +325,9 @@ jobs:
           CA_FILE="$RUNNER_TEMP/kafka-ca.crt"
           CERT_FILE="$RUNNER_TEMP/kafka-tls.crt"
           KEY_FILE="$RUNNER_TEMP/kafka-tls.key"
-          printf '%s' "$KAFKA_SSL_CA_BASE64"      | base64 --decode > "$CA_FILE"
-          printf '%s' "$KAFKA_BROKER_CERT_BASE64"  | base64 --decode > "$CERT_FILE"
-          printf '%s' "$KAFKA_BROKER_KEY_BASE64"   | base64 --decode > "$KEY_FILE"
+          printf '%s' "$KAFKA_SSL_CA_BASE64"      | tr -d '[:space:]' | base64 --decode > "$CA_FILE"
+          printf '%s' "$KAFKA_BROKER_CERT_BASE64"  | tr -d '[:space:]' | base64 --decode > "$CERT_FILE"
+          printf '%s' "$KAFKA_BROKER_KEY_BASE64"   | tr -d '[:space:]' | base64 --decode > "$KEY_FILE"
 
           # Validate the decoded PEMs are well-formed.
           openssl x509 -in "$CA_FILE"   -noout
