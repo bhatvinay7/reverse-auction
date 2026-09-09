@@ -305,7 +305,7 @@ jobs:
           done
           kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=10m
           kubectl apply -f argocd/argocd-health-config.yaml
-          kubectl get configmap argocd-cm -n argocd -l app.kubernetes.io/part-of=argocd -o name
+          test "$(kubectl get configmap argocd-cm -n argocd -o jsonpath='{.metadata.labels.app\.kubernetes\.io/part-of}')" = argocd
       - name: Configure Argo CD GitOps repository access
         env:
           GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
