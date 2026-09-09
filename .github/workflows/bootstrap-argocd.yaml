@@ -262,17 +262,51 @@ jobs:
           # Bootstrap owns the upstream Argo CD installation fields, including those
           # previously written by kubectl-client-side-apply during earlier installs.
           kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-          kubectl rollout status deployment/argocd-server -n argocd --timeout=10m
-          kubectl rollout status deployment/argocd-repo-server -n argocd --timeout=10m
+          kubectl wait --for=condition=Established crd/applications.argoproj.io \
+            crd/applicationsets.argoproj.io crd/appprojects.argoproj.io --timeout=5m
+          for deployment in argocd-server argocd-repo-server argocd-applicationset-controller \
+            argocd-notifications-controller argocd-dex-server argocd-redis; do
+            kubectl rollout status deployment/"$deployment" -n argocd --timeout=10m
+          done
+          kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=10m
           kubectl apply -f argocd/argocd-health-config.yaml
           python3 scripts/render-argocd-root.py ${{ inputs.environment == 'dev' && 'deployment' || 'main' }} | kubectl apply -f -
       - name: Wait for Strimzi and the KRaft cluster
         shell: bash
         run: |
+          set -Eeuo pipefail
+          diagnostics() {
+            kubectl get applications -n argocd || true
+            kubectl get applications -n argocd auction-root auction-strimzi auction-infra \
+              -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.status.conditions}{" "}{.status.operationState.message}{"\n"}{end}' || true
+            kubectl get deployments,pods -n kafka || true
+          }
+          trap diagnostics ERR
+          # Argo CD reconciles asynchronously. A condition wait alone fails with
+          # NotFound until the CRD, operator and Kafka resource have been created.
+          wait_for_resource() {
+            local resource="$1"
+            shift
+            local deadline=$((SECONDS + 900))
+            local found
+            while (( SECONDS < deadline )); do
+              found=$(kubectl get "$resource" "$@" --ignore-not-found -o name --request-timeout=30s)
+              if [ -n "$found" ]; then
+                return 0
+              fi
+              echo "Waiting for Argo CD to create $resource..."
+              sleep 10
+            done
+            echo "Timed out waiting for $resource; inspect Argo CD sync diagnostics below."
+            return 1
+          }
+          wait_for_resource crd/kafkas.kafka.strimzi.io
           kubectl wait --for=condition=Established \
             crd/kafkas.kafka.strimzi.io --timeout=15m
+          wait_for_resource deployment/strimzi-cluster-operator -n kafka
           kubectl rollout status deployment/strimzi-cluster-operator \
             -n kafka --timeout=15m
+          wait_for_resource kafka/auction-kafka -n kafka
           kubectl wait kafka/auction-kafka -n kafka \
             --for=condition=Ready --timeout=20m
       - name: Checkout application bootstrap scripts
