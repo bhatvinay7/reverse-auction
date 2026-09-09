@@ -284,7 +284,7 @@ apps/search-server        Kafka consumer and Elasticsearch embedding search API
 auction-k8s               Argo CD, Strimzi, KRaft, and application GitOps state
 ```
 
-CI checks and builds all eight application images. Pushes to `deployment` update GitOps `deployment`; pushes to `main` update GitOps `main` with immutable image digests. Each build embeds the matching frontend URLs, and delivery commits environment-specific SealedSecrets.
+CI checks Rust and web changes on pull requests and pushes. Pushes to `deployment` build all eight application images and update the development GitOps branch with immutable commit tags. Production promotion is an explicit workflow that resolves those images to immutable digests and opens a GitOps pull request. Each web build embeds the development frontend URLs; the bootstrap workflow commits environment-specific SealedSecrets.
 
 
 <!-- hyper liquid and memcoin -->
