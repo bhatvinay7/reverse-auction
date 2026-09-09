@@ -78,22 +78,24 @@ jobs:
           workloads=$(kubectl get deployments,daemonsets --all-namespaces -l "$selector" \
             -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.kind}{"/"}{.metadata.name}{"\n"}{end}')
           if [ -z "$workloads" ]; then
-            echo "Installing missing nginx ingress controller in ingress-nginx."
-            helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-            helm repo update ingress-nginx
-            helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
-              --namespace ingress-nginx --create-namespace \
-              --version 4.10.0 \
-              --set controller.service.type=LoadBalancer \
-              --set controller.metrics.enabled=true \
-              --set controller.ingressClassResource.enabled=$([ -z "$controller" ] && echo true || echo false) \
-              --wait --timeout=10m
-            workloads=$(kubectl get deployments,daemonsets -n ingress-nginx -l "$selector" \
-              -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.kind}{"/"}{.metadata.name}{"\n"}{end}')
-            test -n "$workloads"
+            echo "Installing nginx ingress controller in ingress-nginx."
           else
-            echo "Existing nginx ingress controller found; skipping installation."
+            echo "Reconciling existing nginx ingress controller and LoadBalancer service."
           fi
+          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+          helm repo update ingress-nginx
+          helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+            --namespace ingress-nginx --create-namespace \
+            --version 4.10.0 \
+            --set controller.service.type=LoadBalancer \
+            --set controller.service.enableHttp=true \
+            --set controller.service.enableHttps=true \
+            --set controller.metrics.enabled=true \
+            --set controller.ingressClassResource.enabled=$([ -z "$controller" ] && echo true || echo false) \
+            --wait --timeout=10m
+          workloads=$(kubectl get deployments,daemonsets -n ingress-nginx -l "$selector" \
+            -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.kind}{"/"}{.metadata.name}{"\n"}{end}')
+          test -n "$workloads"
           # An existing controller may have been installed with class creation disabled.
           if [ -z "$(kubectl get ingressclass nginx --ignore-not-found -o name)" ]; then
             printf '%s\n' 'apiVersion: networking.k8s.io/v1' 'kind: IngressClass' \
@@ -104,6 +106,22 @@ jobs:
             kubectl wait -n "$namespace" pod -l "$selector" \
               --for=condition=Ready --timeout=5m
           done <<< "$workloads"
+          service=ingress-nginx-controller
+          test "$(kubectl get service "$service" -n ingress-nginx -o jsonpath='{.spec.type}')" = LoadBalancer
+          kubectl get service "$service" -n ingress-nginx -o jsonpath='{range .spec.ports[*]}{.port}{"\n"}{end}' | grep -qx 80
+          kubectl get service "$service" -n ingress-nginx -o jsonpath='{range .spec.ports[*]}{.port}{"\n"}{end}' | grep -qx 443
+          deadline=$((SECONDS + 600))
+          while (( SECONDS < deadline )); do
+            address=$(kubectl get service "$service" -n ingress-nginx \
+              -o jsonpath='{.status.loadBalancer.ingress[0].ip}{.status.loadBalancer.ingress[0].hostname}')
+            if [ -n "$address" ]; then
+              echo "Ingress LoadBalancer ready at $address with TCP ports 80 and 443."
+              break
+            fi
+            echo "Waiting for ingress LoadBalancer address..."
+            sleep 10
+          done
+          test -n "${address:-}"
       - name: Ensure healthy cert-manager
         shell: bash
         run: |
