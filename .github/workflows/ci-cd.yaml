@@ -3,8 +3,16 @@ name: Auction CI and development delivery
 on:
   pull_request:
     branches: [deployment, main]
+    paths-ignore:
+      - ".github/workflows/bootstrap-argocd.yaml"
+      - "scripts/ensure-kafka-topics.py"
+      - ".env.deployment"
   push:
     branches: [deployment, main]
+    paths-ignore:
+      - ".github/workflows/bootstrap-argocd.yaml"
+      - "scripts/ensure-kafka-topics.py"
+      - ".env.deployment"
   workflow_dispatch:
 
 permissions:

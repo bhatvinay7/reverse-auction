@@ -11,6 +11,10 @@ on:
         description: Type BOOTSTRAP to modify the cluster
         required: true
 
+concurrency:
+  group: auction-bootstrap-${{ inputs.environment }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -54,8 +58,7 @@ jobs:
         run: |
           test -n "$KUBE_CONFIG"
           mkdir -p "$RUNNER_TEMP/kube"
-          printf '%s' "$KUBE_CONFIG" | base64 --decode > "$RUNNER_TEMP/kube/config" 2>/dev/null || true
-          if [ ! -s "$RUNNER_TEMP/kube/config" ]; then
+          if ! printf '%s' "$KUBE_CONFIG" | base64 --decode > "$RUNNER_TEMP/kube/config" 2>/dev/null; then
             echo "Falling back to raw YAML for KUBE_CONFIG..."
             printf '%s' "$KUBE_CONFIG" > "$RUNNER_TEMP/kube/config"
           fi
@@ -102,8 +105,35 @@ jobs:
             kubectl wait -n "$namespace" pod -l "$selector" \
               --for=condition=Ready --timeout=5m
           done <<< "$workloads"
-      - name: Install Sealed Secrets controller
-        run: kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/controller.yaml
+      - name: Ensure healthy cert-manager
+        shell: bash
+        run: |
+          set -euo pipefail
+          installed=$(kubectl get deployment cert-manager -n cert-manager --ignore-not-found -o name)
+          if [ -z "$installed" ]; then
+            helm repo add jetstack https://charts.jetstack.io
+            helm repo update jetstack
+            helm upgrade --install cert-manager jetstack/cert-manager \
+              --namespace cert-manager --create-namespace \
+              --version v1.13.2 --set installCRDs=true \
+              --set webhook.timeoutSeconds=10 --wait --timeout=10m
+          else
+            echo "Existing cert-manager found; skipping installation."
+          fi
+          for deployment in cert-manager cert-manager-cainjector cert-manager-webhook; do
+            kubectl rollout status deployment/"$deployment" -n cert-manager --timeout=5m
+          done
+          kubectl wait --for=condition=Established crd/clusterissuers.cert-manager.io --timeout=5m
+      - name: Ensure Sealed Secrets controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          installed=$(kubectl get deployment sealed-secrets-controller -n kube-system --ignore-not-found -o name)
+          if [ -z "$installed" ]; then
+            kubectl apply --server-side -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/controller.yaml
+          else
+            echo "Existing Sealed Secrets controller found; skipping installation."
+          fi
       - name: Wait for Sealed Secrets controller
         run: kubectl rollout status -n kube-system deploy/sealed-secrets-controller --timeout=5m
       - name: Install kubeseal
