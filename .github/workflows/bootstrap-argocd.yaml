@@ -212,12 +212,9 @@ jobs:
           kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
           kubectl rollout status deployment/argocd-server -n argocd --timeout=10m
-          kubectl apply -k argocd
-          if [ "${{ inputs.environment }}" = "dev" ]; then
-            kubectl apply -f argocd/dev-apps.yaml
-          else
-            kubectl apply -f argocd/prod-apps.yaml
-          fi
+          kubectl rollout status deployment/argocd-repo-server -n argocd --timeout=10m
+          kubectl apply -f argocd/argocd-health-config.yaml
+          python3 scripts/render-argocd-root.py ${{ inputs.environment == 'dev' && 'deployment' || 'main' }} | kubectl apply -f -
       - name: Wait for Strimzi and the KRaft cluster
         shell: bash
         run: |
@@ -227,5 +224,10 @@ jobs:
             -n kafka --timeout=15m
           kubectl wait kafka/auction-kafka -n kafka \
             --for=condition=Ready --timeout=20m
+      - name: Checkout application bootstrap scripts
+        uses: actions/checkout@v4
+        with:
+          path: auction-source
+          persist-credentials: false
       - name: Ensure Kafka topics exist
-        run: ./scripts/ensure-kafka-topics.sh
+        run: python3 auction-source/scripts/ensure-kafka-topics.py "$GITHUB_WORKSPACE"
