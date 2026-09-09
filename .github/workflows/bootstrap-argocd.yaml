@@ -164,23 +164,31 @@ jobs:
       - name: Wait for controller certificate
         shell: bash
         run: |
+          set -euo pipefail
           kubectl wait --for=condition=Established crd/sealedsecrets.bitnami.com --timeout=5m
           cert="$RUNNER_TEMP/sealed-secrets-cert.pem"
-          # The controller generates its TLS keypair asynchronously after the
-          # pod becomes Ready. Allow up to 5 minutes (60 × 5s) for it to appear.
-          for attempt in {1..60}; do
-            if kubeseal --controller-name sealed-secrets-controller \
-                        --controller-namespace kube-system \
-                        --fetch-cert > "$cert" 2>/dev/null; then
+          # kubeseal --fetch-cert proxies through the API server HTTP handler which
+          # is unreachable from GitHub runners. Read the cert directly from the
+          # sealed-secrets-key Secret that the controller creates in kube-system.
+          # This works regardless of network policy or service proxy exposure.
+          deadline=$((SECONDS + 300))
+          while (( SECONDS < deadline )); do
+            tls_crt=$(kubectl get secret -n kube-system \
+              -l sealedsecrets.bitnami.com/sealed-secrets-key=active \
+              -o jsonpath='{.items[0].data.tls\.crt}' 2>/dev/null || true)
+            if [ -n "$tls_crt" ] && [ "$tls_crt" != "null" ]; then
+              printf '%s' "$tls_crt" | base64 --decode > "$cert"
               openssl x509 -in "$cert" -noout
               echo "SEALED_SECRETS_CERT_FILE=$cert" >> "$GITHUB_ENV"
+              echo "Controller certificate written to $cert"
               exit 0
             fi
-            echo "Attempt $attempt/60: cert not ready, retrying in 5s..."
+            echo "Waiting for sealed-secrets-key secret..."
             sleep 5
           done
           echo "Sealed Secrets controller certificate unavailable after 5 minutes"
           exit 1
+
       - name: Seal Secrets
         env:
           GITOPS_REPO: ${{ secrets.GITOPS_REPO }}
