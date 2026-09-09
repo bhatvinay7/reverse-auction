@@ -129,7 +129,7 @@ jobs:
           set -euo pipefail
           installed=$(kubectl get deployment sealed-secrets-controller -n kube-system --ignore-not-found -o name)
           if [ -z "$installed" ]; then
-            kubectl apply --server-side -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/controller.yaml
+            kubectl apply --server-side -f https://github.com/bitnami/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/controller.yaml
           else
             echo "Existing Sealed Secrets controller found; skipping installation."
           fi
@@ -159,7 +159,7 @@ jobs:
           done
       - name: Install kubeseal
         run: |
-          curl -fSL "https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/kubeseal-${KUBESEAL_VERSION}-linux-amd64.tar.gz" | tar xz
+          curl -fSL "https://github.com/bitnami/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/kubeseal-${KUBESEAL_VERSION}-linux-amd64.tar.gz" | tar xz
           sudo install -m 755 kubeseal /usr/local/bin/kubeseal
       - name: Wait for controller certificate
         shell: bash
