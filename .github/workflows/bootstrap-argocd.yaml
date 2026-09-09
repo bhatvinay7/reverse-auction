@@ -19,6 +19,8 @@ jobs:
     if: inputs.confirm == 'BOOTSTRAP'
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    env:
+      KUBESEAL_VERSION: "0.27.3"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,14 +64,28 @@ jobs:
           export KUBECONFIG="$RUNNER_TEMP/kube/config"
           kubectl cluster-info
       - name: Install Sealed Secrets controller
-        run: kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/latest/download/controller.yaml
+        run: kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/controller.yaml
       - name: Wait for Sealed Secrets controller
-        run: kubectl rollout status -n kube-system deploy/sealed-secrets-controller --timeout=90s
+        run: kubectl rollout status -n kube-system deploy/sealed-secrets-controller --timeout=5m
       - name: Install kubeseal
         run: |
-          KUBESEAL_VERSION="0.27.3"
-          curl -L "https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/kubeseal-${KUBESEAL_VERSION}-linux-amd64.tar.gz" | tar xz
+          curl -fSL "https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/kubeseal-${KUBESEAL_VERSION}-linux-amd64.tar.gz" | tar xz
           sudo install -m 755 kubeseal /usr/local/bin/kubeseal
+      - name: Wait for controller certificate
+        shell: bash
+        run: |
+          kubectl wait --for=condition=Established crd/sealedsecrets.bitnami.com --timeout=5m
+          cert="$RUNNER_TEMP/sealed-secrets-cert.pem"
+          for attempt in {1..30}; do
+            if kubeseal --controller-name sealed-secrets-controller --controller-namespace kube-system --fetch-cert > "$cert"; then
+              openssl x509 -in "$cert" -noout
+              echo "SEALED_SECRETS_CERT_FILE=$cert" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Sealed Secrets controller certificate unavailable"
+          exit 1
       - name: Seal Secrets
         env:
           GITOPS_REPO: ${{ secrets.GITOPS_REPO }}
