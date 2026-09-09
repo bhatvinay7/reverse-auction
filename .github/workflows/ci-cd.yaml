@@ -102,6 +102,7 @@ jobs:
     name: Update development GitOps image tags
     needs: build
     runs-on: ubuntu-latest
+    environment: dev
     steps:
       - name: Require cross-repository token
         env:
