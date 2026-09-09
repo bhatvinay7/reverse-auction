@@ -1,0 +1,200 @@
+name: Bootstrap Kafka Controller
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [dev, prod]
+        required: true
+      confirm:
+        description: Type BOOTSTRAP to modify the cluster
+        required: true
+
+concurrency:
+  group: auction-bootstrap-kafka-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    if: inputs.confirm == 'BOOTSTRAP'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: bhatvinay7/auction-k8s
+          ref: ${{ inputs.environment == 'dev' && 'deployment' || 'main' }}
+          token: ${{ secrets.GITOPS_TOKEN }}
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+      - name: Configure kubectl
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        shell: bash
+        run: |
+          test -n "$KUBE_CONFIG"
+          mkdir -p "$RUNNER_TEMP/kube"
+          if ! printf '%s' "$KUBE_CONFIG" | base64 --decode > "$RUNNER_TEMP/kube/config" 2>/dev/null; then
+            echo "Falling back to raw YAML for KUBE_CONFIG..."
+            printf '%s' "$KUBE_CONFIG" > "$RUNNER_TEMP/kube/config"
+          fi
+          chmod 600 "$RUNNER_TEMP/kube/config"
+          echo "KUBECONFIG=$RUNNER_TEMP/kube/config" >> "$GITHUB_ENV"
+          export KUBECONFIG="$RUNNER_TEMP/kube/config"
+          kubectl cluster-info
+      - name: Preinstall pinned Strimzi CRDs
+        shell: bash
+        run: |
+          helm repo add strimzi https://strimzi.io/charts/
+          helm repo update strimzi
+          # This chart includes CRDs in both crds/ and templates/.
+          helm template strimzi-kafka-operator strimzi/strimzi-kafka-operator \
+            --version 0.43.0 --namespace kafka --include-crds > "$RUNNER_TEMP/strimzi.yaml"
+          python3 - "$RUNNER_TEMP/strimzi.yaml" <<'PYCRDS' > "$RUNNER_TEMP/strimzi-crds.yaml"
+          import sys, yaml
+          with open(sys.argv[1]) as source:
+              crds = [doc for doc in yaml.safe_load_all(source)
+                      if doc and doc.get('kind') == 'CustomResourceDefinition']
+          names = {doc['metadata']['name'] for doc in crds}
+          required = {'kafkas.kafka.strimzi.io', 'kafkanodepools.kafka.strimzi.io',
+                      'kafkatopics.kafka.strimzi.io', 'strimzipodsets.core.strimzi.io'}
+          if not required <= names:
+              sys.exit('Pinned chart is missing required Strimzi CRDs')
+          yaml.safe_dump_all(crds, sys.stdout)
+          PYCRDS
+          kubectl apply --server-side -f "$RUNNER_TEMP/strimzi-crds.yaml"
+          kubectl wait --for=condition=Established -f "$RUNNER_TEMP/strimzi-crds.yaml" --timeout=5m
+      - name: Create kafka-broker-tls secret from base64 secrets
+        env:
+          KAFKA_SSL_CA_BASE64: ${{ secrets.KAFKA_SSL_CA_BASE64 }}
+          KAFKA_BROKER_CERT_BASE64: ${{ secrets.KAFKA_BROKER_CERT_BASE64 }}
+          KAFKA_BROKER_KEY_BASE64: ${{ secrets.KAFKA_BROKER_KEY_BASE64 }}
+        shell: bash
+        run: |
+          python3 - <<'PYKAFKA'
+          import base64, os, subprocess, sys
+          from pathlib import Path
+
+          def decode(env_var):
+              raw = os.environ.get(env_var, '')
+              if not raw:
+                  sys.exit(f'{env_var} is required')
+              cleaned = ''.join(raw.split())          # strip all whitespace/newlines
+              cleaned += '=' * (-len(cleaned) % 4)   # fix any missing padding
+              return base64.b64decode(cleaned)
+
+          tmp      = Path(os.environ['RUNNER_TEMP'])
+          ca_file  = tmp / 'kafka-ca.crt'
+          crt_file = tmp / 'kafka-tls.crt'
+          key_file = tmp / 'kafka-tls.key'
+
+          ca_file.write_bytes(decode('KAFKA_SSL_CA_BASE64'))
+          crt_file.write_bytes(decode('KAFKA_BROKER_CERT_BASE64'))
+          key_file.write_bytes(decode('KAFKA_BROKER_KEY_BASE64'))
+
+          # Validate PEMs are well-formed before touching the cluster.
+          for cmd in [
+              ['openssl', 'x509', '-in', str(ca_file),  '-noout'],
+              ['openssl', 'x509', '-in', str(crt_file), '-noout'],
+              ['openssl', 'rsa',  '-in', str(key_file), '-check', '-noout'],
+          ]:
+              r = subprocess.run(cmd, capture_output=True)
+              if r.returncode != 0:
+                  sys.exit(f'PEM validation failed ({cmd[3]}): {r.stderr.decode().strip()}')
+
+          # Ensure the kafka namespace exists.
+          ns = subprocess.check_output(
+              ['kubectl', 'create', 'namespace', 'kafka', '--dry-run=client', '-o', 'yaml'])
+          subprocess.run(['kubectl', 'apply', '-f', '-'], input=ns, check=True)
+
+          # Create (or idempotently replace) kafka-broker-tls.
+          dry = subprocess.check_output([
+              'kubectl', 'create', 'secret', 'generic', 'kafka-broker-tls',
+              '--namespace', 'kafka',
+              f'--from-file=tls.crt={crt_file}',
+              f'--from-file=tls.key={key_file}',
+              f'--from-file=ca.crt={ca_file}',
+              '--type=kubernetes.io/tls',
+              '--save-config', '--dry-run=client', '-o', 'yaml',
+          ])
+          subprocess.run(['kubectl', 'apply', '-f', '-'], input=dry, check=True)
+
+          for f in (ca_file, crt_file, key_file):
+              f.unlink(missing_ok=True)
+          print('kafka-broker-tls applied to namespace kafka.')
+          PYKAFKA
+
+      - name: Deploy Strimzi Application
+        shell: bash
+        run: |
+          # Apply the Strimzi Application directly (it was moved out of the root chart)
+          kubectl apply -f argocd/strimzi-application.yaml
+
+      - name: Wait for Strimzi and the KRaft cluster
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          diagnostics() {
+            kubectl get applications -n argocd || true
+            kubectl get applications -n argocd auction-strimzi \
+              -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.status.conditions}{" "}{.status.operationState.message}{"\n"}{end}' || true
+            kubectl get deployments,pods -n kafka || true
+          }
+          trap diagnostics ERR
+          # Surface the operator's sync failure while waiting, not only at timeout.
+          strimzi_status() {
+            kubectl get application auction-strimzi -n argocd -o json --request-timeout=30s | python3 -c '
+          import json, sys
+          status = json.load(sys.stdin).get("status", {})
+          print("Strimzi Application: sync=" + status.get("sync", {}).get("status", "Pending") +
+                ", health=" + status.get("health", {}).get("status", "Pending"))
+          for condition in status.get("conditions", []):
+              print(condition.get("type", "Condition") + ": " + condition.get("message", ""))
+          operation = status.get("operationState", {})
+          if operation.get("phase") in ("Failed", "Error"):
+              print("Sync " + operation["phase"] + ": " + operation.get("message", ""))
+          '
+          }
+          # Argo CD reconciles asynchronously. A condition wait alone fails with
+          # NotFound until the CRD, operator and Kafka resource have been created.
+          wait_for_resource() {
+            local resource="$1"
+            shift
+            local deadline=$((SECONDS + 900))
+            local found
+            local attempt=0
+            while (( SECONDS < deadline )); do
+              found=$(kubectl get "$resource" "$@" --ignore-not-found -o name --request-timeout=30s)
+              if [ -n "$found" ]; then
+                return 0
+              fi
+              echo "Waiting for Argo CD to create $resource..."
+              if (( attempt % 6 == 0 )); then
+                strimzi_status
+              fi
+              attempt=$((attempt + 1))
+              sleep 10
+            done
+            echo "Timed out waiting for $resource; inspect Argo CD sync diagnostics below."
+            return 1
+          }
+          wait_for_resource crd/kafkas.kafka.strimzi.io
+          kubectl wait --for=condition=Established \
+            crd/kafkas.kafka.strimzi.io --timeout=15m
+          wait_for_resource deployment/strimzi-cluster-operator -n kafka
+          kubectl rollout status deployment/strimzi-cluster-operator \
+            -n kafka --timeout=15m
+          wait_for_resource kafka/auction-kafka -n kafka
+          kubectl wait kafka/auction-kafka -n kafka \
+            --for=condition=Ready --timeout=20m
+      - name: Checkout application bootstrap scripts
+        uses: actions/checkout@v4
+        with:
+          path: auction-source
+          persist-credentials: false
+      - name: Ensure Kafka topics exist
+        run: python3 auction-source/scripts/ensure-kafka-topics.py "$GITHUB_WORKSPACE"
