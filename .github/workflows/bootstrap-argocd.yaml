@@ -63,12 +63,12 @@ jobs:
           echo "KUBECONFIG=$RUNNER_TEMP/kube/config" >> "$GITHUB_ENV"
           export KUBECONFIG="$RUNNER_TEMP/kube/config"
           kubectl cluster-info
-      - name: Require healthy nginx ingress controller
+      - name: Ensure healthy nginx ingress controller
         shell: bash
         run: |
           set -euo pipefail
-          controller=$(kubectl get ingressclass nginx -o jsonpath='{.spec.controller}')
-          if [ "$controller" != "k8s.io/ingress-nginx" ]; then
+          controller=$(kubectl get ingressclass nginx --ignore-not-found -o jsonpath='{.spec.controller}')
+          if [ -n "$controller" ] && [ "$controller" != "k8s.io/ingress-nginx" ]; then
             echo "The nginx IngressClass must use the ingress-nginx controller."
             exit 1
           fi
@@ -76,8 +76,26 @@ jobs:
           workloads=$(kubectl get deployments,daemonsets --all-namespaces -l "$selector" \
             -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.kind}{"/"}{.metadata.name}{"\n"}{end}')
           if [ -z "$workloads" ]; then
-            echo "Install the nginx ingress controller before running bootstrap."
-            exit 1
+            echo "Installing missing nginx ingress controller in ingress-nginx."
+            helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+            helm repo update ingress-nginx
+            helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+              --namespace ingress-nginx --create-namespace \
+              --version 4.10.0 \
+              --set controller.service.type=LoadBalancer \
+              --set controller.metrics.enabled=true \
+              --set controller.ingressClassResource.enabled=$([ -z "$controller" ] && echo true || echo false) \
+              --wait --timeout=10m
+            workloads=$(kubectl get deployments,daemonsets -n ingress-nginx -l "$selector" \
+              -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.kind}{"/"}{.metadata.name}{"\n"}{end}')
+            test -n "$workloads"
+          else
+            echo "Existing nginx ingress controller found; skipping installation."
+          fi
+          # An existing controller may have been installed with class creation disabled.
+          if [ -z "$(kubectl get ingressclass nginx --ignore-not-found -o name)" ]; then
+            printf '%s\n' 'apiVersion: networking.k8s.io/v1' 'kind: IngressClass' \
+              'metadata:' '  name: nginx' 'spec:' '  controller: k8s.io/ingress-nginx' | kubectl apply -f -
           fi
           while read -r namespace workload; do
             kubectl rollout status -n "$namespace" "$workload" --timeout=5m
