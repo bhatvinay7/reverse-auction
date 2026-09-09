@@ -134,7 +134,29 @@ jobs:
             echo "Existing Sealed Secrets controller found; skipping installation."
           fi
       - name: Wait for Sealed Secrets controller
-        run: kubectl rollout status -n kube-system deploy/sealed-secrets-controller --timeout=5m
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Wait for the Deployment rollout to finish.
+          kubectl rollout status -n kube-system deploy/sealed-secrets-controller --timeout=5m
+          # Wait for the Pod itself to be Ready (rollout status does not guarantee this).
+          kubectl wait -n kube-system pod \
+            -l name=sealed-secrets-controller \
+            --for=condition=Ready --timeout=5m
+          # Wait until the Service has at least one endpoint address registered.
+          # kubeseal --fetch-cert proxies through the API server; it fails with
+          # "no endpoints available" until the Endpoints object is populated.
+          deadline=$((SECONDS + 120))
+          while (( SECONDS < deadline )); do
+            addrs=$(kubectl get endpoints sealed-secrets-controller -n kube-system \
+              -o jsonpath='{.subsets[0].addresses}' 2>/dev/null || true)
+            if [ -n "$addrs" ] && [ "$addrs" != 'null' ]; then
+              echo "sealed-secrets-controller endpoint is ready."
+              break
+            fi
+            echo "Waiting for sealed-secrets-controller endpoint..."
+            sleep 5
+          done
       - name: Install kubeseal
         run: |
           curl -fSL "https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/kubeseal-${KUBESEAL_VERSION}-linux-amd64.tar.gz" | tar xz
@@ -144,15 +166,20 @@ jobs:
         run: |
           kubectl wait --for=condition=Established crd/sealedsecrets.bitnami.com --timeout=5m
           cert="$RUNNER_TEMP/sealed-secrets-cert.pem"
-          for attempt in {1..30}; do
-            if kubeseal --controller-name sealed-secrets-controller --controller-namespace kube-system --fetch-cert > "$cert"; then
+          # The controller generates its TLS keypair asynchronously after the
+          # pod becomes Ready. Allow up to 5 minutes (60 × 5s) for it to appear.
+          for attempt in {1..60}; do
+            if kubeseal --controller-name sealed-secrets-controller \
+                        --controller-namespace kube-system \
+                        --fetch-cert > "$cert" 2>/dev/null; then
               openssl x509 -in "$cert" -noout
               echo "SEALED_SECRETS_CERT_FILE=$cert" >> "$GITHUB_ENV"
               exit 0
             fi
+            echo "Attempt $attempt/60: cert not ready, retrying in 5s..."
             sleep 5
           done
-          echo "Sealed Secrets controller certificate unavailable"
+          echo "Sealed Secrets controller certificate unavailable after 5 minutes"
           exit 1
       - name: Seal Secrets
         env:
