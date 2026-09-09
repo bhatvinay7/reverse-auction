@@ -63,6 +63,27 @@ jobs:
           echo "KUBECONFIG=$RUNNER_TEMP/kube/config" >> "$GITHUB_ENV"
           export KUBECONFIG="$RUNNER_TEMP/kube/config"
           kubectl cluster-info
+      - name: Require healthy nginx ingress controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          controller=$(kubectl get ingressclass nginx -o jsonpath='{.spec.controller}')
+          if [ "$controller" != "k8s.io/ingress-nginx" ]; then
+            echo "The nginx IngressClass must use the ingress-nginx controller."
+            exit 1
+          fi
+          selector='app.kubernetes.io/name=ingress-nginx,app.kubernetes.io/component=controller'
+          workloads=$(kubectl get deployments,daemonsets --all-namespaces -l "$selector" \
+            -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.kind}{"/"}{.metadata.name}{"\n"}{end}')
+          if [ -z "$workloads" ]; then
+            echo "Install the nginx ingress controller before running bootstrap."
+            exit 1
+          fi
+          while read -r namespace workload; do
+            kubectl rollout status -n "$namespace" "$workload" --timeout=5m
+            kubectl wait -n "$namespace" pod -l "$selector" \
+              --for=condition=Ready --timeout=5m
+          done <<< "$workloads"
       - name: Install Sealed Secrets controller
         run: kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/controller.yaml
       - name: Wait for Sealed Secrets controller
