@@ -305,6 +305,7 @@ jobs:
           done
           kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=10m
           kubectl apply -f argocd/argocd-health-config.yaml
+          kubectl get configmap argocd-cm -n argocd -l app.kubernetes.io/part-of=argocd -o name
       - name: Configure Argo CD GitOps repository access
         env:
           GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
@@ -348,6 +349,9 @@ jobs:
             kubectl get applications -n argocd auction-root auction-strimzi auction-infra \
               -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.status.conditions}{" "}{.status.operationState.message}{"\n"}{end}' || true
             kubectl get deployments,pods -n kafka || true
+            kubectl logs -n kafka deployment/strimzi-cluster-operator --tail=60 || true
+            kubectl logs -n kafka deployment/strimzi-cluster-operator --previous --tail=60 || true
+            kubectl get events -n kafka --field-selector type=Warning --sort-by=.lastTimestamp || true
           }
           trap diagnostics ERR
           # Surface the operator's sync failure while waiting, not only at timeout.
