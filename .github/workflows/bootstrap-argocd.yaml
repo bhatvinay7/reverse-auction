@@ -349,8 +349,8 @@ jobs:
             kubectl get applications -n argocd auction-root auction-strimzi auction-infra \
               -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.status.conditions}{" "}{.status.operationState.message}{"\n"}{end}' || true
             kubectl get deployments,pods -n kafka || true
-            kubectl logs -n kafka deployment/strimzi-cluster-operator --tail=60 || true
-            kubectl logs -n kafka deployment/strimzi-cluster-operator --previous --tail=60 || true
+            kubectl logs -n kafka deployment/strimzi-cluster-operator --tail=500 || true
+            kubectl logs -n kafka deployment/strimzi-cluster-operator --previous --tail=500 || true
             kubectl get events -n kafka --field-selector type=Warning --sort-by=.lastTimestamp || true
           }
           trap diagnostics ERR
