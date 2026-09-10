@@ -65,6 +65,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          revision="${{ inputs.environment == 'dev' && 'deployment' || 'main' }}"
+          sed "s/__GIT_REVISION__/$revision/g" argocd/manual/kafka-application.yaml | kubectl apply -f -
           kubectl get application auction-kafka -n argocd -o name
           automated=$(kubectl get application auction-kafka -n argocd -o jsonpath='{.spec.syncPolicy.automated}')
           test -z "$automated"
