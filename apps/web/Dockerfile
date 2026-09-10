@@ -19,7 +19,7 @@ COPY packages/typescript-config/package.json ./packages/typescript-config/
 COPY packages/ui/package.json ./packages/ui/
 RUN bun install
 COPY . .
-RUN bun --cwd apps/web run build
+RUN cd apps/web && bun run build
 # Fail the image build rather than publishing an image that `next start` cannot run.
 RUN test -s /app/apps/web/.next/BUILD_ID
 
