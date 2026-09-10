@@ -26,7 +26,10 @@ export default function NewSellerListingPage() {
         const response = await fetch(`${apiUrl}/api/upload`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || `Could not upload ${item.file.name}`);
-        uploaded.push(result.url);
+        if (typeof result.secure_url !== 'string' || !result.secure_url) {
+          throw new Error(`Upload did not return a media URL for ${item.file.name}`);
+        }
+        uploaded.push(result.secure_url);
       }
       const values = new FormData(form);
       const optionalNumber = (name: string) => values.get(name) ? Number(values.get(name)) : null;
