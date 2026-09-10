@@ -13,16 +13,21 @@ import { ReverseAuctionsView } from './dashboard/ReverseAuctionsView';
 
 function useAuctions() {
   const { data } = useQuery({
-    queryKey: ['search-auctions', 'dashboard'],
+    queryKey: ['auctions'],
     queryFn: async () => {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-      // Legacy catalog fetch intentionally disabled: `${apiUrl}/api/auction`.
-      // Search-server is the single catalog/search source, reached via
-      // gateway-keeper at the public API origin.
-      const res = await fetch(`${apiUrl}/api/search`);
-      if (!res.ok) throw new Error('Failed to fetch search catalog');
+      // Dashboard schedules are user-specific (registration and participant
+      // state), so they remain sourced from http-server through gateway-keeper.
+      // Typed search is handled separately by SearchBar/SearchResults via
+      // search-server at `/api/search`.
+      const res = await fetch(`${apiUrl}/api/auction`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      if (!res.ok) throw new Error('Failed to fetch auctions');
       const json = await res.json();
-      return (json.results || []) as Auction[];
+      return (json.auctions || []) as Auction[];
     },
   });
   

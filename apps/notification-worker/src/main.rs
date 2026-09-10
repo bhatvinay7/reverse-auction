@@ -860,15 +860,15 @@ async fn run_sweep_worker(
     use chrono::Utc;
     use diesel::prelude::*;
 
-    println!("[sweep-worker] Started. Polling for missed auction finalizations every 60s.");
+    println!("[sweep-worker] Started. Polling for missed auction finalizations every 10s.");
 
     loop {
-        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
-        // Only sweep auctions whose end_time was at least 12 seconds ago.
+        // Only sweep auctions whose end_time was at least 5 seconds ago.
         // This grace period lets the auction-engine fire its own EndAuction event
         // before the sweeper treats the auction as "missed".
-        let deadline = Utc::now().naive_utc() - chrono::Duration::seconds(12);
+        let deadline = Utc::now().naive_utc() - chrono::Duration::seconds(5);
 
         let mut db_conn = match pool.get() {
             Ok(c) => c,
@@ -925,10 +925,29 @@ async fn run_sweep_worker(
             )
             .await
             {
-                Ok(_) => println!(
-                    "[sweep-worker] Re-queued auction {} for sync.",
-                    auction_uuid
-                ),
+                Ok(_) => {
+                    // Mark the auction complete as soon as durable
+                    // finalization has been queued. The sync worker remains
+                    // responsible for persisting bids and selecting a winner.
+                    if let Err(error) = diesel::sql_query(
+                        "UPDATE auctions SET status = 'COMPLETED'::auction_status \
+                         WHERE id = $1 AND status != 'COMPLETED'::auction_status",
+                    )
+                    .bind::<diesel::sql_types::Uuid, _>(auction_uuid)
+                    .execute(&mut db_conn)
+                    {
+                        auction_observability::report_error(
+                            "notification-worker",
+                            "sweeper_status_update",
+                            error.to_string(),
+                            serde_json::json!({"auction_id": auction_uuid}),
+                        );
+                    }
+                    println!(
+                        "[sweep-worker] Re-queued auction {} for sync.",
+                        auction_uuid
+                    );
+                }
                 Err(e) => auction_observability::report_error(
                     "notification-worker",
                     "sweeper_sync_publish",

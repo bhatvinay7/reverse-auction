@@ -1,5 +1,6 @@
 'use client';
 
+import { AuctionSearch } from '../auction/AuctionSearch';
 import { Auction } from '../../types/api';
 import { ShippingAuctionCard } from './ShippingAuctionCard';
 
@@ -10,6 +11,9 @@ export function ReverseAuctionsView({ auctions }: { auctions: Auction[] }) {
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Auction Marketplace</h1>
           <p className="text-zinc-500 dark:text-zinc-400 mt-2 text-sm font-medium">Browse items, services, assets, contracts, and logistics events.</p>
+        </div>
+        <div className="mt-6 w-full">
+          <AuctionSearch />
         </div>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

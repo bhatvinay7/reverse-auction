@@ -94,9 +94,10 @@ export default function HistoryPage() {
             </thead>
             <tbody>
               {paginatedAuctions.map((item: Auction, idx: number) => {
-                const now = new Date();
-                const endTime = new Date(item.auction_end_time.replace(' ', 'T') + 'Z');
-                const isClosed = now > endTime;
+                // The server determines closure from the authoritative auction
+                // end time. Avoid appending a second `Z` to an ISO timestamp,
+                // which made valid timed-out auctions appear Active.
+                const isClosed = item.is_closed ?? Date.now() >= new Date(item.auction_end_time).getTime();
                 return (
                 <motion.tr 
                   key={item.id}

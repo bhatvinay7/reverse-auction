@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
-import { Factory, Search, LayoutGrid, List, PackageOpen } from 'lucide-react';
+import { Factory, LayoutGrid, List, PackageOpen } from 'lucide-react';
 import Link from 'next/link';
 import { Auction } from '../../types/api';
 import { ShippingAuctionCard } from './ShippingAuctionCard';
@@ -23,7 +23,6 @@ const fadeUp = {
 };
 
 export function DashboardOverview({ auctions, userRole }: { auctions: Auction[], userRole?: string | null }) {
-  const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [viewMode, setViewMode] = useState<'grid' | 'strip'>('grid');
 
@@ -37,19 +36,11 @@ export function DashboardOverview({ auctions, userRole }: { auctions: Auction[],
   }, [auctions]);
 
   const filteredAuctions = useMemo(() => {
-    const needle = search.trim().toLowerCase();
     return auctions.filter((auction) => {
       const category = auction.item_category?.trim() || "General";
-      const matchesCategory =
-        selectedCategory === "All" || category === selectedCategory;
-      const matchesSearch =
-        !needle ||
-        `${auction.title} ${auction.description} ${category}`
-          .toLowerCase()
-          .includes(needle);
-      return matchesCategory && matchesSearch;
+      return selectedCategory === "All" || category === selectedCategory;
     });
-  }, [search, selectedCategory, auctions]);
+  }, [selectedCategory, auctions]);
   return (
     <>
       <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -78,22 +69,9 @@ export function DashboardOverview({ auctions, userRole }: { auctions: Auction[],
               <h2 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">Live Auction Marketplace</h2>
               <p className="text-sm text-zinc-500 dark:text-zinc-400 font-medium">Bid up in forward auctions or bid down in reverse auctions.</p>
             </div>
-            <Link href="#" className="text-indigo-600 dark:text-indigo-400 text-sm font-bold hover:underline">
-              View All Open Auctions
-            </Link>
           </div>
 
           <div className="flex flex-col gap-4">
-            <label className="flex h-12 w-full items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 shadow-sm focus-within:border-indigo-500 focus-within:ring-4 focus-within:ring-indigo-100 dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:ring-indigo-950">
-              <Search size={18} className="text-zinc-400" />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search auctions or categories"
-                className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
-              />
-            </label>
-
             <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between w-full">
               <div className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] flex-1 w-full sm:w-auto">
                 {["All", ...categories.map(([category]) => category)].map(
