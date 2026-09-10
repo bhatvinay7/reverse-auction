@@ -108,12 +108,13 @@ export default function AuctionPage({ params }: { params: Promise<{ id: string }
 
     const startsAt = auction ? new Date(auction.auction_start_time).getTime() : 0;
     const endsAt = auction ? new Date(auction.auction_end_time).getTime() : 0;
+    const joinDeadline = endsAt - 5 * 60_000;
     const phase = now >= endsAt ? 'completed' : now >= startsAt ? 'live' : 'upcoming';
 
     if (!auction) return <div className="grid min-h-[calc(100dvh-4rem)] place-items-center p-6 text-center"><div><h1 className="text-2xl font-black">Auction not found</h1><button onClick={() => router.push('/dashboard')} className="mt-4 font-bold text-blue-600">Return to dashboard</button></div></div>;
 
     if (!hasJoined || phase !== 'live') {
-        const canRegister = phase !== 'completed';
+        const canRegister = phase !== 'completed' && now < joinDeadline;
         return (
             <div className="min-h-[calc(100dvh-4rem)] bg-slate-50 px-4 py-8 text-slate-900 dark:bg-zinc-950 dark:text-zinc-100 sm:px-8">
               <Toast message={joinError} type="error" onClose={() => setJoinError('')} />
@@ -130,12 +131,15 @@ export default function AuctionPage({ params }: { params: Promise<{ id: string }
                       <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">{auction.title}</h1>
                       <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-semibold text-slate-500 dark:text-zinc-400">
                         <span className="flex items-center gap-2"><CalendarDays size={16} /> Starts {new Date(auction.auction_start_time).toLocaleString()}</span>
+                        <span className="flex items-center gap-2"><Clock size={16} /> Ends {new Date(auction.auction_end_time).toLocaleString()}</span>
+                        <span className="flex items-center gap-2"><Clock size={16} /> Register by {new Date(joinDeadline).toLocaleString()}</span>
                         <span className="flex items-center gap-2"><Users size={16} /> {auction.participants_count || 0} registered</span>
                       </div>
                     </div>
                     <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
                       {hasJoined && phase === 'upcoming' && <button onClick={() => leaveMutation.mutate()} disabled={leaveMutation.isPending} className="rounded-xl border border-rose-200 bg-rose-50 px-5 py-3 font-extrabold text-rose-700 hover:bg-rose-100 disabled:opacity-50 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">{leaveMutation.isPending ? 'Unregistering…' : 'Unregister'}</button>}
                       {!hasJoined && canRegister && <button onClick={handleJoinAuction} disabled={joinMutation.isPending} className={`rounded-xl px-6 py-3 font-extrabold text-white shadow-lg disabled:opacity-50 ${phase === 'live' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'}`}>{joinMutation.isPending ? 'Joining…' : phase === 'live' ? 'Join live auction' : 'Register for auction'}</button>}
+                      {!hasJoined && !canRegister && phase !== 'completed' && <span className="rounded-xl bg-amber-100 px-5 py-3 font-bold text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">Registration closed</span>}
                       {phase === 'completed' && <span className="rounded-xl bg-slate-100 px-5 py-3 font-bold text-slate-500 dark:bg-zinc-800">Auction completed</span>}
                     </div>
                   </div>

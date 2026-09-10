@@ -56,6 +56,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .route("/readyz", get(proxy::ready))
         .route("/api/socket-ticket", post(websocket_proxy::create_ticket))
         .route("/socket.io", get(websocket_proxy::socket_proxy))
+        // Socket.IO clients use `/socket.io/` for the root namespace. Axum's
+        // catch-all route below does not match an empty trailing path.
+        .route("/socket.io/", get(websocket_proxy::socket_proxy))
         .route("/socket.io/{*path}", get(websocket_proxy::socket_proxy))
         .route("/api/search", any(proxy::search_proxy))
         .route("/api/{*path}", any(proxy::http_proxy))

@@ -100,22 +100,26 @@ pub async fn create_auction_service(
         .auction_start_time
         .parse::<chrono::DateTime<chrono::Utc>>()
         .map(|dt| dt.naive_utc())
-        .unwrap_or(now);
+        .map_err(|_| AppError::BadRequest("auction_start_time must be a valid UTC timestamp".into()))?;
 
     let requested_end_time = payload
         .auction_end_time
         .parse::<chrono::DateTime<chrono::Utc>>()
         .map(|dt| dt.naive_utc())
-        .unwrap_or_else(|_| start_time + chrono::Duration::minutes(10));
+        .map_err(|_| AppError::BadRequest("auction_end_time must be a valid UTC timestamp".into()))?;
 
     let duration = requested_end_time - start_time;
-    let end_time = if duration < chrono::Duration::minutes(10) {
-        start_time + chrono::Duration::minutes(10)
-    } else if duration > chrono::Duration::minutes(20) {
-        start_time + chrono::Duration::minutes(20)
-    } else {
-        requested_end_time
-    };
+    if duration <= chrono::Duration::zero() {
+        return Err(AppError::BadRequest(
+            "auction_end_time must be after auction_start_time".into(),
+        ));
+    }
+    if duration < chrono::Duration::minutes(10) || duration > chrono::Duration::minutes(20) {
+        return Err(AppError::BadRequest(
+            "Auction duration must be between 10 and 20 minutes".into(),
+        ));
+    }
+    let end_time = requested_end_time;
 
     let freight_type = match payload.freight_type.as_deref() {
         Some("FCL") => Some(db::models::FreightType::FCL),
@@ -283,7 +287,7 @@ pub async fn join_auction_service(
         .get()
         .map_err(|_| AppError::InternalServerError("Failed to get DB connection".into()))?;
 
-    // Registration remains available while the auction is running.
+    // Registration closes five minutes before the authoritative auction end time.
     let auction_end: chrono::NaiveDateTime = auctions
         .filter(db::schema::auctions::id.eq(auction_id))
         .select(auction_end_time)
@@ -291,8 +295,11 @@ pub async fn join_auction_service(
         .map_err(|_| AppError::BadRequest("Auction not found".into()))?;
 
     let now = chrono::Utc::now().naive_utc();
-    if now >= auction_end {
-        return Err(AppError::BadRequest("This auction has ended".into()));
+    let join_deadline = auction_end - chrono::Duration::minutes(5);
+    if now >= join_deadline {
+        return Err(AppError::BadRequest(
+            "Registration closed five minutes before the auction end time".into(),
+        ));
     }
 
     // 3. Add to Postgres DB (Prevent duplicates)

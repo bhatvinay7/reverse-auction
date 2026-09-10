@@ -126,7 +126,9 @@ export function ShippingAuctionCard({ id, title, origin, destination, distance, 
 
   const startTime = auctionStartTime ? parseUtcDate(auctionStartTime) : new Date(now);
   const endTime = auctionEndTime ? parseUtcDate(auctionEndTime) : new Date(now + 86400000);
-  const joinTime = endTime;
+  // The API enforces this same deadline. Keeping it here makes the final
+  // administrator schedule and registration cut-off clear before a user acts.
+  const joinTime = new Date(endTime.getTime() - 5 * 60_000);
   const isVideo = /\.(mp4|webm|ogg|mov)(?:\?|$)/i.test(image) || image.includes('/video/upload/');
   
   let actionText = 'Place Bid';
@@ -143,11 +145,13 @@ export function ShippingAuctionCard({ id, title, origin, destination, distance, 
     timeLabel = 'Ended';
     timeDiff = 0;
   } else if (now >= startTime.getTime() && now <= endTime.getTime()) {
-    actionText = isRegistered ? 'Enter Console' : 'Join Live';
+    actionText = isRegistered ? 'Enter Console' : now < joinTime.getTime() ? 'Join Live' : 'Registration closed';
+    isClosed = !isRegistered && now >= joinTime.getTime();
     timeLabel = 'Ends in';
     timeDiff = endTime.getTime() - now;
   } else if (now < startTime.getTime()) {
-    actionText = isRegistered ? 'Unregister' : 'Register';
+    actionText = isRegistered ? 'Unregister' : now < joinTime.getTime() ? 'Register' : 'Registration closed';
+    isClosed = !isRegistered && now >= joinTime.getTime();
     timeLabel = 'Time left to register';
     timeDiff = joinTime.getTime() - now;
   }
