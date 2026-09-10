@@ -22,5 +22,5 @@ WORKDIR /app
 COPY --from=builder /app/target/release/search-server /usr/local/bin/search-server
 RUN useradd -m appuser
 USER appuser
-EXPOSE 8084
+EXPOSE 8081
 CMD ["search-server"]

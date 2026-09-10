@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/health", get(|| async { "OK" }))
         .with_state(state);
 
-    let addr = std::env::var("HTTP_SERVER_ADDR").unwrap_or_else(|_| "0.0.0.0:8081".into());
+    let addr = std::env::var("SEARCH_SERVER_BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8081".into());
     eprintln!("[Search-Server] Listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

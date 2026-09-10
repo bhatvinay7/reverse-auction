@@ -215,6 +215,7 @@ jobs:
           ELASTICSEARCH_URL: ${{ secrets.ELASTICSEARCH_URL }}
           GATEWAY_KEEPER_ADDR: ${{ secrets.GATEWAY_KEEPER_ADDR }}
           SEARCH_SERVER_ADDR: ${{ secrets.SEARCH_SERVER_ADDR }}
+          SEARCH_SERVER_BIND_ADDR: ${{ secrets.SEARCH_SERVER_BIND_ADDR }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GRPC_SERVER_URL: ${{ secrets.GRPC_SERVER_URL }}
           GATEWAY_KEEPER_GRPC_URL: ${{ secrets.GATEWAY_KEEPER_GRPC_URL }}

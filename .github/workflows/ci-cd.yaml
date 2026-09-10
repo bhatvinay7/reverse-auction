@@ -73,6 +73,8 @@ jobs:
             dockerfile: apps/notification-worker/Dockerfile
           - service: scheduler
             dockerfile: apps/scheduler/Dockerfile
+          - service: search-server
+            dockerfile: apps/search-server/Dockerfile
           - service: ws-server
             dockerfile: apps/ws-server/Dockerfile
           - service: web
@@ -131,7 +133,7 @@ jobs:
         shell: bash
         run: |
           tag="commit-${GITHUB_SHA::7}"
-          for service in auction-engine gateway-keeper grpc http-server notification-worker scheduler ws-server web; do
+          for service in auction-engine gateway-keeper grpc http-server notification-worker scheduler search-server ws-server web; do
             kustomize edit set image "${IMAGE_PREFIX}-${service}=${IMAGE_PREFIX}-${service}:${tag}"
           done
           kustomize build . >/dev/null
