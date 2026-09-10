@@ -11,12 +11,20 @@ import { BiddingConsole } from '../../../components/auction/BiddingConsole';
 import { Leaderboard } from '../../../components/auction/Leaderboard';
 import { AuditLedger } from '../../../components/auction/AuditLedger';
 import { User, Bell, Loader2, Clock, CalendarDays, CheckCircle2, Radio, Users } from 'lucide-react';
-import { AuctionDetailsView } from '../../../components/auction/AuctionDetailsView';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Toast } from '../../../components/Toast';
 import { useAuctionSocket } from '../../../hooks/useAuctionSocket';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import type { Auction } from '../../../types/api';
+
+const AuctionDetailsView = dynamic(
+  () => import('../../../components/auction/AuctionDetailsView').then((module) => module.AuctionDetailsView),
+  {
+    loading: () => <div className="min-h-[620px] animate-pulse rounded-2xl bg-zinc-200 dark:bg-zinc-800" />,
+    ssr: false,
+  },
+);
 
 export default function AuctionPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -119,6 +127,17 @@ export default function AuctionPage({ params }: { params: Promise<{ id: string }
     const phase = now >= endsAt ? 'completed' : now >= startsAt ? 'live' : 'upcoming';
 
     if (!auction) return <div className="grid min-h-[calc(100dvh-4rem)] place-items-center p-6 text-center"><div><h1 className="text-2xl font-black">Auction not found</h1><button onClick={() => router.push('/dashboard')} className="mt-4 font-bold text-blue-600">Return to dashboard</button></div></div>;
+
+    if (phase === 'live' && auction?.is_registered && !hasJoined) {
+      return (
+        <div className="grid min-h-[calc(100dvh-4rem)] place-items-center bg-slate-50 p-6 dark:bg-zinc-950">
+          <div className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white px-6 py-5 font-bold text-zinc-700 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+            <Loader2 className="animate-spin text-indigo-600" size={20} />
+            Opening live auction…
+          </div>
+        </div>
+      );
+    }
 
     if (!hasJoined || phase !== 'live') {
         const canRegister = phase !== 'completed' && now < joinDeadline;
