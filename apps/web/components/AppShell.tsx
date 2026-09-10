@@ -7,7 +7,7 @@ import { RootState } from '../store/store';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 
-const chromeFreeRoutes = ['/', '/login', '/signup', '/forgot-password', '/verify-email'];
+const chromeFreeRoutes = ['/', '/login', '/admin/login', '/signup', '/forgot-password', '/verify-email'];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

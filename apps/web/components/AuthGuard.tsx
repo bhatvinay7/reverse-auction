@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 
-const publicRoutes = ['/', '/login', '/signup', '/forgot-password', '/verify-email'];
+const publicRoutes = ['/', '/login', '/admin/login', '/signup', '/forgot-password', '/verify-email'];
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
