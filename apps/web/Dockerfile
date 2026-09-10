@@ -20,6 +20,8 @@ COPY packages/ui/package.json ./packages/ui/
 RUN bun install
 COPY . .
 RUN bun --cwd apps/web run build
+# Fail the image build rather than publishing an image that `next start` cannot run.
+RUN test -s /app/apps/web/.next/BUILD_ID
 
 # Stage 2: Runner
 FROM oven/bun:1-alpine AS runner
@@ -33,5 +35,6 @@ COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/apps/web ./apps/web
 
 WORKDIR /app/apps/web
+RUN test -s .next/BUILD_ID
 EXPOSE 3000
 CMD ["bun", "run", "start"]
