@@ -1,0 +1,71 @@
+name: Bootstrap Kafka operator
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [dev, prod]
+        required: true
+      confirm:
+        description: Type BOOTSTRAP_KAFKA to install the Strimzi operator
+        required: true
+
+concurrency:
+  group: auction-kafka-bootstrap-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap-kafka:
+    if: inputs.confirm == 'BOOTSTRAP_KAFKA'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: bhatvinay7/auction-k8s
+          ref: ${{ inputs.environment == 'dev' && 'deployment' || 'main' }}
+          token: ${{ secrets.GITOPS_TOKEN }}
+      - uses: azure/setup-helm@v4
+      - name: Configure kubectl
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KUBE_CONFIG"
+          mkdir -p "$RUNNER_TEMP/kube"
+          if ! printf '%s' "$KUBE_CONFIG" | base64 --decode > "$RUNNER_TEMP/kube/config" 2>/dev/null; then
+            printf '%s' "$KUBE_CONFIG" > "$RUNNER_TEMP/kube/config"
+          fi
+          chmod 600 "$RUNNER_TEMP/kube/config"
+          echo "KUBECONFIG=$RUNNER_TEMP/kube/config" >> "$GITHUB_ENV"
+      - name: Install Strimzi with Helm
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl create namespace kafka --dry-run=client -o yaml | kubectl apply -f -
+          helm repo add strimzi https://strimzi.io/charts/
+          helm repo update strimzi
+          # Helm, not Argo CD, owns this release. --take-ownership safely adopts
+          # a previous Argo-rendered installation during the one-time migration.
+          helm upgrade --install strimzi-kafka-operator strimzi/strimzi-kafka-operator \
+            --version 0.43.0 \
+            --namespace kafka \
+            --set-json 'watchNamespaces=[]' \
+            --set-json 'extraEnvs=[{"name":"STRIMZI_KUBERNETES_VERSION","value":"major=1,minor=33"}]' \
+            --take-ownership \
+            --wait --timeout=10m
+          kubectl wait --for=condition=Established crd/kafkas.kafka.strimzi.io --timeout=5m
+          kubectl rollout status deployment/strimzi-cluster-operator -n kafka --timeout=5m
+      - name: Confirm Argo CD Kafka sync is manual
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl get application auction-kafka -n argocd -o name
+          automated=$(kubectl get application auction-kafka -n argocd -o jsonpath='{.spec.syncPolicy.automated}')
+          test -z "$automated"
+          echo 'Strimzi is Helm-managed. Sync auction-kafka manually in Argo CD when you want to apply Kafka resources.'
