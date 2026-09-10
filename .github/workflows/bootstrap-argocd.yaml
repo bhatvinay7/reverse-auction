@@ -299,7 +299,18 @@ jobs:
           git add .
           git diff --cached --quiet && exit 0
           git commit -m "chore(secrets): seal secrets and update hosts for ${{ inputs.environment }}"
-          git push origin HEAD:${{ inputs.environment == 'dev' && 'deployment' || 'main' }}
+          branch="${{ inputs.environment == 'dev' && 'deployment' || 'main' }}"
+          # A concurrent GitOps change can land while this run seals secrets.
+          # Rebase the generated commit and retry, rather than discarding either change.
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:$branch"; then
+              exit 0
+            fi
+            git fetch origin "$branch"
+            git rebase "origin/$branch"
+          done
+          echo "Could not push generated GitOps changes after three rebase attempts."
+          exit 1
 
       - name: Install Argo CD and configure child health checks
         shell: bash
