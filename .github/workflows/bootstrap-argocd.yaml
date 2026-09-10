@@ -349,10 +349,38 @@ jobs:
               'data': {key: base64.b64encode(value.encode()).decode() for key, value in values.items()}}))
           PYREPO
           kubectl wait -n argocd sealedsecret/auction-gitops-repository --for=condition=Synced --timeout=5m
+      - name: Install Helm-managed Strimzi operator
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl create namespace kafka --dry-run=client -o yaml | kubectl apply -f -
+          helm repo add strimzi https://strimzi.io/charts/
+          helm repo update strimzi
+          # Bootstrap owns this Helm release; Argo CD never manages the operator.
+          # --take-ownership adopts a prior Argo-rendered installation during migration.
+          helm upgrade --install strimzi-kafka-operator strimzi/strimzi-kafka-operator \
+            --version 0.43.0 \
+            --namespace kafka \
+            --set-json 'watchNamespaces=[]' \
+            --set-json 'extraEnvs=[{"name":"STRIMZI_KUBERNETES_VERSION","value":"major=1,minor=33"}]' \
+            --take-ownership \
+            --wait --timeout=10m
+          kubectl wait --for=condition=Established crd/kafkas.kafka.strimzi.io --timeout=5m
+          kubectl rollout status deployment/strimzi-cluster-operator -n kafka --timeout=5m
       - name: Deploy GitOps root
         shell: bash
         run: |
           python3 scripts/render-argocd-root.py ${{ inputs.environment == 'dev' && 'deployment' || 'main' }} | kubectl apply -f -
+      - name: Register manually synced Kafka application
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision="${{ inputs.environment == 'dev' && 'deployment' || 'main' }}"
+          sed "s/__GIT_REVISION__/$revision/g" argocd/manual/kafka-application.yaml | kubectl apply -f -
+          kubectl get application auction-kafka -n argocd -o name
+          automated=$(kubectl get application auction-kafka -n argocd -o jsonpath='{.spec.syncPolicy.automated}')
+          test -z "$automated"
+          echo 'Strimzi is Helm-managed. Sync auction-kafka manually in Argo CD to apply Kafka resources.'
 
       - name: Verify all GitOps applications are synced and healthy
         shell: bash
