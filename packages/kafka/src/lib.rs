@@ -55,6 +55,23 @@ pub fn brokers() -> String {
     env::var("KAFKA_BROKERS").unwrap_or_else(|_| "127.0.0.1:9092".to_string())
 }
 
+fn decode_pem_base64(encoded: &str, label: &str) -> Vec<u8> {
+    // GitHub Secrets may preserve line wrapping and some Base64 tools omit
+    // padding. Normalize both forms before decoding, just as the sealing
+    // workflow does. Raw PEM remains invalid by design.
+    let mut normalized: String = encoded
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect();
+    if normalized.starts_with("-----BEGIN") {
+        panic!("{label} must be a base64-encoded PEM, not raw PEM");
+    }
+    normalized.extend(std::iter::repeat_n('=', (4 - normalized.len() % 4) % 4));
+    STANDARD
+        .decode(normalized)
+        .unwrap_or_else(|_| panic!("{label} must be valid base64"))
+}
+
 fn client_config() -> ClientConfig {
     load_workspace_env();
     let mut config = ClientConfig::new();
@@ -76,11 +93,7 @@ fn client_config() -> ClientConfig {
     // Decode the three TLS PEM blobs that are stored as base64 in the
     // environment (sealed in Kubernetes; raw in .env for local dev).
     for (env_var, kafka_prop, label) in [
-        (
-            "KAFKA_SSL_CA_BASE64",
-            "ssl.ca.pem",
-            "KAFKA_SSL_CA_BASE64",
-        ),
+        ("KAFKA_SSL_CA_BASE64", "ssl.ca.pem", "KAFKA_SSL_CA_BASE64"),
         (
             "KAFKA_BROKER_CERT_BASE64",
             "ssl.certificate.pem",
@@ -93,9 +106,7 @@ fn client_config() -> ClientConfig {
         ),
     ] {
         if let Ok(encoded) = env::var(env_var) {
-            let bytes = STANDARD
-                .decode(encoded.trim())
-                .unwrap_or_else(|_| panic!("{label} must be valid base64"));
+            let bytes = decode_pem_base64(&encoded, label);
             let pem = String::from_utf8(bytes)
                 .unwrap_or_else(|_| panic!("{label} must decode to a UTF-8 PEM"));
             config.set(kafka_prop, pem);
@@ -234,6 +245,17 @@ pub async fn ensure_topics() -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_pem_base64;
+
+    #[test]
+    fn decodes_wrapped_and_unpadded_base64() {
+        assert_eq!(decode_pem_base64("Y2F\n0", "CA"), b"cat");
+        assert_eq!(decode_pem_base64("Y2E", "CA"), b"ca");
+    }
 }
 
 fn env_i64(name: &str, default: i64) -> i64 {
