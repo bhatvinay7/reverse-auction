@@ -4,6 +4,14 @@ AquaBid is a real-time marketplace for forward and reverse auctions. A forward a
 
 The repository contains a Next.js marketplace, Rust edge and backend services, a Kafka event log, Redis live state, PostgreSQL system-of-record data, and the `auction-k8s` GitOps repository reconciled by Argo CD.
 
+## How AquaBid works
+
+A seller creates a forward or reverse auction, then an administrator reviews it and sets its final schedule. Buyers discover scheduled auctions in the marketplace and register before the deadline, five minutes before the scheduled start. A registered participant receives a short-lived, one-use socket ticket through Gateway Keeper when the auction becomes live.
+
+Each bid is validated, written to Kafka using the auction ID as its key, and processed in order by that auction's engine actor. Redis atomically stores the live rank and bid state, and Socket.IO broadcasts accepted changes to the auction room. Kafka consumers persist the complete decision audit trail and, after close, finalize operational bids and the winner in PostgreSQL. Dashboard and history data come from the HTTP service; search is routed through Gateway Keeper to the search service and Elasticsearch.
+
+This separation keeps the interactive path fast while retaining a replayable event log, a real-time state store, and durable records for history and audit.
+
 ## Architecture
 
 The request path is synchronous until gRPC ingestion durably appends the bid to Kafka. Bid decisions are then asynchronous and ordered by auction.
@@ -284,7 +292,4 @@ apps/search-server        Kafka consumer and Elasticsearch embedding search API
 auction-k8s               Argo CD, Strimzi, KRaft, and application GitOps state
 ```
 
-CI checks Rust and web changes on pull requests and pushes. Pushes to `deployment` build all eight application images and update the development GitOps branch with immutable commit tags. Production promotion is an explicit workflow that resolves those images to immutable digests and opens a GitOps pull request. Each web build embeds the development frontend URLs; the bootstrap workflow commits environment-specific SealedSecrets.
-
-
-<!-- hyper liquid and memcoin -->
+CI checks Rust and web changes on pull requests and pushes. Pushes to `deployment` build all eight application images and update the development GitOps branch with immutable commit tags. Production promotion resolves those images to immutable digests and opens a GitOps pull request. Each web build embeds the development frontend URLs; the bootstrap process commits environment-specific SealedSecrets.
