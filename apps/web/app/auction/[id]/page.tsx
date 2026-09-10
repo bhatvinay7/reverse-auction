@@ -42,7 +42,6 @@ export default function AuctionPage({ params }: { params: Promise<{ id: string }
         return (body.auctions as Auction[]).find(item => item.id === resolvedParams.id) || null;
       },
     });
-    useEffect(() => { if (auction?.is_registered) setHasJoined(true); }, [auction?.is_registered]);
     useEffect(() => {
       setNow(Date.now());
       const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -85,6 +84,14 @@ export default function AuctionPage({ params }: { params: Promise<{ id: string }
         }
     });
 
+    // Rehydrate the Redis authorization bit for users already registered in
+    // Postgres (for example, after a Redis restart) before opening the socket.
+    useEffect(() => {
+      if (auction?.is_registered && !hasJoined && !joinMutation.isPending) {
+        joinMutation.mutate();
+      }
+    }, [auction?.is_registered, hasJoined, joinMutation]);
+
     const leaveMutation = useMutation({
       mutationFn: async () => {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -108,7 +115,7 @@ export default function AuctionPage({ params }: { params: Promise<{ id: string }
 
     const startsAt = auction ? new Date(auction.auction_start_time).getTime() : 0;
     const endsAt = auction ? new Date(auction.auction_end_time).getTime() : 0;
-    const joinDeadline = endsAt - 5 * 60_000;
+    const joinDeadline = startsAt - 5 * 60_000;
     const phase = now >= endsAt ? 'completed' : now >= startsAt ? 'live' : 'upcoming';
 
     if (!auction) return <div className="grid min-h-[calc(100dvh-4rem)] place-items-center p-6 text-center"><div><h1 className="text-2xl font-black">Auction not found</h1><button onClick={() => router.push('/dashboard')} className="mt-4 font-bold text-blue-600">Return to dashboard</button></div></div>;

@@ -281,26 +281,17 @@ pub async fn join_auction_service(
 ) -> Result<(), AppError> {
     use db::models::NewAuctionParticipant;
     use db::schema::auction_participants;
-    use db::schema::auctions::dsl::{auction_end_time, auctions};
+    use db::schema::auctions::dsl::{auction_start_time, auctions};
 
     let mut conn = pool
         .get()
         .map_err(|_| AppError::InternalServerError("Failed to get DB connection".into()))?;
 
-    // Registration closes five minutes before the authoritative auction end time.
-    let auction_end: chrono::NaiveDateTime = auctions
+    let auction_start: chrono::NaiveDateTime = auctions
         .filter(db::schema::auctions::id.eq(auction_id))
-        .select(auction_end_time)
+        .select(auction_start_time)
         .first(&mut conn)
         .map_err(|_| AppError::BadRequest("Auction not found".into()))?;
-
-    let now = chrono::Utc::now().naive_utc();
-    let join_deadline = auction_end - chrono::Duration::minutes(5);
-    if now >= join_deadline {
-        return Err(AppError::BadRequest(
-            "Registration closed five minutes before the auction end time".into(),
-        ));
-    }
 
     // 3. Add to Postgres DB (Prevent duplicates)
     use db::schema::auction_participants::dsl as ap_dsl;
@@ -314,8 +305,17 @@ pub async fn join_auction_service(
         .unwrap_or(0);
 
     if existing_count > 0 {
+        // Redis participant bits are deliberately treated as a cache. Restore a
+        // persisted registration after a Redis restart before opening the socket.
+        set_participant_bit(redis_pool, auction_id, user_id).await?;
+        return Ok(());
+    }
+
+    let now = chrono::Utc::now().naive_utc();
+    let join_deadline = auction_start - chrono::Duration::minutes(5);
+    if now >= join_deadline {
         return Err(AppError::BadRequest(
-            "You have already joined this auction".into(),
+            "Registration closed five minutes before the auction start time".into(),
         ));
     }
 
@@ -337,35 +337,34 @@ pub async fn join_auction_service(
             }
         })?;
 
-    // 4. Set the participant bit in Redis so ws-server can verify them instantly
-    let offset = (user_id.as_u128() % (1 << 31)) as usize;
-    let bitmap_key = format!("auction:participants:{}", auction_id);
-    match redis_pool.get().await {
-        Ok(mut redis_conn) => {
-            let _: redis::RedisResult<bool> =
-                redis::AsyncCommands::setbit(&mut *redis_conn, &bitmap_key, offset, true).await;
-            println!(
-                "[http-server] Set participant bit for user {} (offset {}) in auction {}",
-                user_id, offset, auction_id
-            );
-        }
-        Err(e) => {
-            // Non-fatal: log and continue. The auction-engine will backfill on init.
-            auction_observability::report_error(
-                "http-server",
-                "participant_cache_write",
-                e.to_string(),
-                serde_json::json!({
-                    "auction_id": auction_id,
-                    "user_id": user_id,
-                    "database_write_succeeded": true,
-                }),
-            );
-        }
-    }
+    // The bid and socket services use this bit for authorization. Do not report
+    // a successful registration unless the access record is available to them.
+    set_participant_bit(redis_pool, auction_id, user_id).await?;
 
     invalidate_auction_catalog(redis_pool).await;
 
+    Ok(())
+}
+
+async fn set_participant_bit(
+    redis_pool: &bb8::Pool<bb8_redis::RedisConnectionManager>,
+    auction_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let offset = (user_id.as_u128() % (1 << 31)) as usize;
+    let bitmap_key = format!("auction:participants:{}", auction_id);
+    let mut redis_conn = redis_pool.get().await.map_err(|error| {
+        AppError::InternalServerError(format!("Registration access store is unavailable: {error}"))
+    })?;
+    let _: bool = redis::AsyncCommands::setbit(&mut *redis_conn, &bitmap_key, offset, true)
+        .await
+        .map_err(|error| {
+            AppError::InternalServerError(format!("Failed to grant auction access: {error}"))
+        })?;
+    println!(
+        "[http-server] Set participant bit for user {} (offset {}) in auction {}",
+        user_id, offset, auction_id
+    );
     Ok(())
 }
 
