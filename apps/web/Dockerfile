@@ -30,11 +30,11 @@ ENV NODE_ENV=production
 ENV HOSTNAME="0.0.0.0"
 ENV PORT=3000
 
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/packages ./packages
-COPY --from=builder /app/apps/web ./apps/web
+COPY --from=builder /app/apps/web/public ./apps/web/public
+COPY --from=builder /app/apps/web/.next/standalone ./
+COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
 
-WORKDIR /app/apps/web
-RUN test -s .next/BUILD_ID && test -s .next/standalone/server.js
+WORKDIR /app
+RUN test -s apps/web/server.js
 EXPOSE 3000
-CMD ["node", ".next/standalone/server.js"]
+CMD ["node", "apps/web/server.js"]
