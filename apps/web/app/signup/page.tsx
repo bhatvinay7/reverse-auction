@@ -145,7 +145,7 @@ export default function SignupPage() {
                     type="text" 
                     required
                     className="w-full pl-9 pr-3 py-2 rounded-md border border-zinc-200 dark:border-zinc-800 bg-[#f4f5f7] dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-medium focus:border-indigo-500 transition-colors outline-none text-sm" 
-                    placeholder="John Doe" 
+                    placeholder="Enter your full name"
                   />
                 </div>
               </div>
@@ -157,7 +157,7 @@ export default function SignupPage() {
                     name="company_name"
                     type="text" 
                     className="w-full pl-9 pr-3 py-2 rounded-md border border-zinc-200 dark:border-zinc-800 bg-[#f4f5f7] dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-medium focus:border-indigo-500 transition-colors outline-none text-sm" 
-                    placeholder="Global Freight" 
+                    placeholder="Enter your business name"
                   />
                 </div>
               </div>
