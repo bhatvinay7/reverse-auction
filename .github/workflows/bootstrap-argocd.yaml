@@ -201,6 +201,45 @@ jobs:
           echo "Sealed Secrets controller certificate unavailable after 5 minutes"
           exit 1
 
+      - name: Ensure Kafka TLS identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          tls_dir="$RUNNER_TEMP/kafka-broker-tls"
+          rm -rf "$tls_dir"
+          mkdir -m 700 "$tls_dir"
+          kubectl create namespace kafka --dry-run=client -o yaml | kubectl apply -f -
+          if kubectl get secret kafka-broker-tls -n kafka >/dev/null 2>&1; then
+            echo "Reusing existing Kafka TLS identity."
+            for key in ca.crt tls.crt tls.key; do
+              case "$key" in
+                ca.crt) jsonpath='{.data.ca\.crt}' ;;
+                tls.crt) jsonpath='{.data.tls\.crt}' ;;
+                tls.key) jsonpath='{.data.tls\.key}' ;;
+              esac
+              kubectl get secret kafka-broker-tls -n kafka -o "jsonpath=$jsonpath" | base64 --decode > "$tls_dir/$key"
+            done
+          else
+            echo "Generating a new Kafka CA and broker certificate."
+            openssl req -x509 -new -nodes -newkey rsa:4096 -sha256 -days 3650 \
+              -keyout "$tls_dir/ca.key" -out "$tls_dir/ca.crt" \
+              -subj '/CN=auction-kafka-ca'
+            openssl req -new -nodes -newkey rsa:2048 \
+              -keyout "$tls_dir/tls.key" -out "$tls_dir/tls.csr" \
+              -subj '/CN=auction-kafka'
+            printf '%s\n' \
+              'subjectAltName=DNS:auction-kafka-kafka-bootstrap.kafka.svc,DNS:auction-kafka-kafka-bootstrap.kafka.svc.cluster.local,DNS:auction-kafka-dual-role-0.auction-kafka-kafka-brokers.kafka.svc,DNS:auction-kafka-dual-role-0.auction-kafka-kafka-brokers.kafka.svc.cluster.local' \
+              'extendedKeyUsage=serverAuth' > "$tls_dir/extensions.cnf"
+            openssl x509 -req -in "$tls_dir/tls.csr" -CA "$tls_dir/ca.crt" -CAkey "$tls_dir/ca.key" \
+              -CAcreateserial -out "$tls_dir/tls.crt" -days 825 -sha256 -extfile "$tls_dir/extensions.cnf"
+            rm -f "$tls_dir/ca.key" "$tls_dir/tls.csr" "$tls_dir/extensions.cnf" "$tls_dir/ca.srl"
+          fi
+          openssl verify -CAfile "$tls_dir/ca.crt" -untrusted "$tls_dir/tls.crt" "$tls_dir/tls.crt"
+          for host in auction-kafka-kafka-bootstrap.kafka.svc auction-kafka-kafka-bootstrap.kafka.svc.cluster.local auction-kafka-dual-role-0.auction-kafka-kafka-brokers.kafka.svc auction-kafka-dual-role-0.auction-kafka-kafka-brokers.kafka.svc.cluster.local; do
+            openssl verify -CAfile "$tls_dir/ca.crt" -untrusted "$tls_dir/tls.crt" -verify_hostname "$host" "$tls_dir/tls.crt"
+          done
+          echo "KAFKA_TLS_DIR=$tls_dir" >> "$GITHUB_ENV"
+
       - name: Seal Secrets
         env:
           GITOPS_REPO: ${{ secrets.GITOPS_REPO }}
@@ -262,9 +301,6 @@ jobs:
           KAFKA_REPLICATION_FACTOR: ${{ secrets.KAFKA_REPLICATION_FACTOR }}
           KAFKA_BID_PARTITIONS: ${{ secrets.KAFKA_BID_PARTITIONS }}
           KAFKA_BACKGROUND_PARTITIONS: ${{ secrets.KAFKA_BACKGROUND_PARTITIONS }}
-          KAFKA_SSL_CA_BASE64: ${{ secrets.KAFKA_SSL_CA_BASE64 }}
-          KAFKA_BROKER_CERT_BASE64: ${{ secrets.KAFKA_BROKER_CERT_BASE64 }}
-          KAFKA_BROKER_KEY_BASE64: ${{ secrets.KAFKA_BROKER_KEY_BASE64 }}
           AUCTION_ACTOR_QUEUE_CAPACITY: ${{ secrets.AUCTION_ACTOR_QUEUE_CAPACITY }}
           AUCTION_KAFKA_PARTITION_QUEUE_CAPACITY: ${{ secrets.AUCTION_KAFKA_PARTITION_QUEUE_CAPACITY }}
           DOWNSTREAM_TIMEOUT_SECS: ${{ secrets.DOWNSTREAM_TIMEOUT_SECS }}
@@ -292,7 +328,11 @@ jobs:
           WS_SERVER_URL: ${{ secrets.WS_SERVER_URL }}
         run: |
           sudo apt-get update && sudo apt-get install -y python3-yaml
+          export KAFKA_SSL_CA_BASE64="$(base64 -w0 "$KAFKA_TLS_DIR/ca.crt")"
+          export KAFKA_BROKER_CERT_BASE64="$(base64 -w0 "$KAFKA_TLS_DIR/tls.crt")"
+          export KAFKA_BROKER_KEY_BASE64="$(base64 -w0 "$KAFKA_TLS_DIR/tls.key")"
           python3 scripts/seal-secrets.py ${{ inputs.environment }}
+          unset KAFKA_SSL_CA_BASE64 KAFKA_BROKER_CERT_BASE64 KAFKA_BROKER_KEY_BASE64
       - name: Commit and push GitOps change
         run: |
           git config user.name "auction-delivery[bot]"
