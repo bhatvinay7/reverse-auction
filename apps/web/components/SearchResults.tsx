@@ -20,7 +20,10 @@ export function SearchResults({
     const fetchResults = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(q || '')}`);
+        // `/api/search` is served by gateway-keeper, which proxies it to
+        // search-server. Never query http-server for search results.
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+        const res = await fetch(`${apiUrl}/api/search?q=${encodeURIComponent(q || '')}`);
         if (!res.ok) throw new Error('Failed to fetch search results');
         const data = await res.json();
         setResults(data.results || []);
