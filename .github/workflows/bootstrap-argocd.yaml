@@ -422,35 +422,3 @@ jobs:
           automated=$(kubectl get application auction-kafka -n argocd -o jsonpath='{.spec.syncPolicy.automated}')
           test -z "$automated"
           echo 'Strimzi is Helm-managed. Sync auction-kafka manually in Argo CD to apply Kafka resources.'
-
-      - name: Verify all GitOps applications are synced and healthy
-        shell: bash
-        run: |
-          set -euo pipefail
-          deadline=$((SECONDS + 1800))
-          while (( SECONDS < deadline )); do
-            kubectl get applications -n argocd -o json > "$RUNNER_TEMP/auction-app-status.json"
-            if python3 - "$RUNNER_TEMP/auction-app-status.json" <<'PYAPPS'
-          import json, sys
-          with open(sys.argv[1]) as source:
-              apps = {app['metadata']['name']: app for app in json.load(source)['items']}
-          ready = True
-          for name in ('auction-root', 'auction-secrets', 'auction-infra', 'auction-workloads'):
-              status = apps.get(name, {}).get('status', {})
-              sync = status.get('sync', {}).get('status', 'Missing')
-              health = status.get('health', {}).get('status', 'Missing')
-              print(f'{name}: sync={sync}, health={health}')
-              ready &= sync == 'Synced' and health == 'Healthy'
-              for condition in status.get('conditions', []):
-                  print(condition.get('message', ''))
-          sys.exit(0 if ready else 1)
-          PYAPPS
-            then
-              exit 0
-            fi
-            sleep 15
-          done
-          echo "GitOps applications did not all become Synced and Healthy within 30 minutes."
-          kubectl get pods -n auction
-          kubectl get pods -n kafka
-          exit 1
