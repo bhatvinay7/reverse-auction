@@ -24,7 +24,7 @@ RUN cd apps/web && bun run build
 RUN test -s /app/apps/web/.next/BUILD_ID
 
 # Stage 2: Runner
-FROM oven/bun:1-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOSTNAME="0.0.0.0"
@@ -35,6 +35,6 @@ COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/apps/web ./apps/web
 
 WORKDIR /app/apps/web
-RUN test -s .next/BUILD_ID
+RUN test -s .next/BUILD_ID && test -s .next/standalone/server.js
 EXPOSE 3000
-CMD ["bun", "run", "start"]
+CMD ["node", ".next/standalone/server.js"]
