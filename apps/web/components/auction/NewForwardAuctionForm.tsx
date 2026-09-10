@@ -204,14 +204,8 @@ export function NewForwardAuctionForm() {
       return;
     }
     
-    if (endTime - now < 3 * 60 * 1000) {
-      setFormError("Auction end time must be at least 3 minutes from now.");
-      return;
-    }
-    
-    // Validate max duration of 20 minutes (since start time is 'now' for forward auctions)
-    if (endTime - now > 20 * 60 * 1000) {
-      setFormError("Max auction duration is 20 minutes.");
+    if (endTime - now < 5 * 60 * 1000) {
+      setFormError("Auction duration must be at least 5 minutes.");
       return;
     }
     submitMutation.mutate(formData);

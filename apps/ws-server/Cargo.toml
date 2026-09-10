@@ -23,4 +23,7 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "fs"] }
 bb8 = "0.9.1"
 bb8-redis = "0.26.0"
-jsonwebtoken = "10.4.0"
+# JWT decoding is used on the Socket.IO connection path. jsonwebtoken v10 has
+# no crypto provider in its default feature set, which otherwise panics at
+# runtime when decoding the first token.
+jsonwebtoken = { version = "10.4.0", default-features = false, features = ["rust_crypto"] }

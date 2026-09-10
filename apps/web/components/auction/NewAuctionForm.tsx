@@ -129,7 +129,7 @@ export function NewAuctionForm() {
     const step = Number(form.minimumBidStep);
     if (!Number.isFinite(start) || !Number.isFinite(end)) return setError('Choose valid start and end times.');
     if (end <= start) return setError('Auction end time must be after its start time.');
-    if (end - start < 10 * 60_000 || end - start > 20 * 60_000) return setError('Live bidding must run for 10 to 20 minutes.');
+    if (end - start < 5 * 60_000) return setError('Live bidding must run for at least 5 minutes.');
     if (!Number.isFinite(startingPrice) || startingPrice <= 0) return setError('Starting price must be greater than zero.');
     if (!Number.isFinite(step) || step <= 0) return setError('Minimum bid step must be greater than zero.');
     if (form.auctionType === 'FORWARD' && form.reservePrice !== '' && Number(form.reservePrice) < startingPrice) {

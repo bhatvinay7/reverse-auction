@@ -366,13 +366,8 @@ export function NewShipmentForm() {
       return;
     }
 
-    if (endTime - startTime > 20 * 60 * 1000) {
-      setFormError("Max auction duration is 20 minutes.");
-      return;
-    }
-    
-    if (endTime - startTime < 10 * 60 * 1000) {
-      setFormError("Min auction duration is 10 minutes.");
+    if (endTime - startTime < 5 * 60 * 1000) {
+      setFormError("Auction duration must be at least 5 minutes.");
       return;
     }
 

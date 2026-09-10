@@ -118,9 +118,9 @@ pub async fn create_auction_service(
             "auction_end_time must be after auction_start_time".into(),
         ));
     }
-    if duration < chrono::Duration::minutes(10) || duration > chrono::Duration::minutes(20) {
+    if duration < chrono::Duration::minutes(5) {
         return Err(AppError::BadRequest(
-            "Auction duration must be between 10 and 20 minutes".into(),
+            "Auction duration must be at least 5 minutes".into(),
         ));
     }
     let end_time = requested_end_time;

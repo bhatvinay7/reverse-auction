@@ -353,8 +353,7 @@ async fn test_join_auction_success() {
     let user_id = auth_resp.get("user_id").unwrap().as_str().unwrap();
     let token = auth_resp.get("token").unwrap().as_str().unwrap();
 
-    // Create an auction starting in 10 minutes. The ten-minute duration is
-    // within the API's allowed 10–20 minute auction window.
+    // Create an auction starting in 10 minutes with the minimum safe duration.
     let future_start = chrono::Utc::now() + chrono::Duration::minutes(10);
     let start_time_str = future_start.format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let end_time_str = (future_start + chrono::Duration::minutes(10))
