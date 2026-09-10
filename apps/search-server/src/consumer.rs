@@ -1,11 +1,8 @@
 #![allow(clippy::collapsible_if)]
 
-use rdkafka::{
-    consumer::StreamConsumer,
-    Message,
-};
 use elasticsearch::{DeleteParts, IndexParts};
-use serde_json::{json, Value};
+use rdkafka::{Message, consumer::StreamConsumer};
+use serde_json::{Value, json};
 
 use crate::AppState;
 
@@ -64,7 +61,8 @@ pub async fn run_consumer(state: AppState) -> Result<(), Box<dyn std::error::Err
                     &state.openai_api_key,
                     &text_to_embed,
                 )
-                .await {
+                .await
+                {
                     if let Some(obj) = doc.as_object_mut() {
                         obj.insert("embedding".to_string(), json!(embedding));
                     }

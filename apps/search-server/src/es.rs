@@ -1,14 +1,16 @@
 #![allow(clippy::collapsible_if)]
 
 use elasticsearch::{
-    indices::{IndicesCreateParts, IndicesExistsParts},
     SearchParts,
+    indices::{IndicesCreateParts, IndicesExistsParts},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::{AppState, SearchQuery};
 
-pub async fn setup_index(client: &elasticsearch::Elasticsearch) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn setup_index(
+    client: &elasticsearch::Elasticsearch,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let exists = client
         .indices()
         .exists(IndicesExistsParts::Index(&["auctions_idx"]))
@@ -94,12 +96,9 @@ pub async fn search(
     if let Some(q) = &query.q {
         if !q.is_empty() {
             // Generate embedding for semantic search
-            if let Ok(embedding) = crate::openai::generate_embedding(
-                &state.openai_client,
-                &state.openai_api_key,
-                q,
-            )
-            .await
+            if let Ok(embedding) =
+                crate::openai::generate_embedding(&state.openai_client, &state.openai_api_key, q)
+                    .await
             {
                 knn_clause = Some(json!({
                     "field": "embedding",

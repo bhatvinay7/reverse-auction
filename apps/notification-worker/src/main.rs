@@ -1,44 +1,11 @@
 use futures_util::stream::StreamExt;
-use rdkafka::{
-    Message, Offset, TopicPartitionList,
-    consumer::{CommitMode, Consumer, StreamConsumer},
-    producer::FutureProducer,
-};
-use serde::{Deserialize, Serialize};
+use rdkafka::{Message, consumer::StreamConsumer, producer::FutureProducer};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct NotificationPayload {
-    pub event_type: Option<String>,
-    pub auction_id: Option<String>,
-    pub email: Option<String>,
-    pub message: String,
-    #[serde(default)]
-    pub retry_count: i32,
-}
+mod email;
+mod kafka;
+mod types;
 
-#[derive(Deserialize, Debug)]
-struct BidDecisionPayload {
-    request_id: String,
-    bid: AuditedBidPayload,
-    auction_type: db::models::AuctionType,
-    is_executed: bool,
-    rejection_reason: Option<String>,
-    previous_price: f64,
-    resulting_price: f64,
-    processed_at: i64,
-    source_topic: String,
-    source_partition: i32,
-    source_offset: i64,
-}
-
-#[derive(Deserialize, Debug)]
-struct AuditedBidPayload {
-    auction_id: uuid::Uuid,
-    bidder_id: String,
-    username: Option<String>,
-    amount: f64,
-    timestamp: i64,
-}
+use crate::types::{BidDecisionPayload, IdRow, NotificationPayload};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -58,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let pool = db::get_connection_pool();
-    wait_for_topics().await;
+    kafka::wait_for_topics().await;
     let producer = auction_kafka::producer()?;
     let notification_consumer = auction_kafka::consumer(
         auction_kafka::NOTIFICATION_GROUP,
@@ -132,11 +99,11 @@ async fn run_bid_audit_worker(
                 );
                 let reason = format!("MALFORMED_BID_DECISION:{error}");
                 let mut delay = 1_u64;
-                while !publish_dlq(&producer, &message, &reason).await {
+                while !kafka::publish_dlq(&producer, &message, &reason).await {
                     tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
                     delay = (delay * 2).min(30);
                 }
-                commit(&consumer, &message);
+                kafka::commit(&consumer, &message);
                 continue;
             }
         };
@@ -176,7 +143,7 @@ async fn run_bid_audit_worker(
 
         // Never commit a well-formed decision before PostgreSQL acknowledges
         // it. Database outages therefore create lag instead of an audit gap.
-        commit(&consumer, &message);
+        kafka::commit(&consumer, &message);
     }
 }
 
@@ -231,8 +198,10 @@ fn to_new_bid_audit_event(
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod bid_audit_tests {
-    use super::{AuditedBidPayload, BidDecisionPayload, to_new_bid_audit_event};
+    use super::{BidDecisionPayload, to_new_bid_audit_event};
+    use crate::types::AuditedBidPayload;
 
     fn decision(accepted: bool) -> BidDecisionPayload {
         BidDecisionPayload {
@@ -307,7 +276,7 @@ async fn run_notification_worker(
 
                 if payload.event_type.as_deref() == Some("user_signup") {
                     if let Some(email) = &payload.email {
-                        let email_sent = simulate_send_email(email, &payload).await;
+                        let email_sent = email::send(email, &payload).await;
                         if email_sent {
                             println!("Successfully sent signup email to {}", email);
                         } else {
@@ -389,7 +358,7 @@ async fn run_notification_worker(
                         );
                     } else {
                         for email in &participant_emails {
-                            let email_sent = simulate_send_email(email, &payload).await;
+                            let email_sent = email::send(email, &payload).await;
                             if email_sent {
                                 println!("Successfully sent email to {}", email);
                             } else {
@@ -400,7 +369,7 @@ async fn run_notification_worker(
                 }
 
                 if all_sent {
-                    commit(&consumer, &message);
+                    kafka::commit(&consumer, &message);
                 } else if payload.retry_count >= 3 {
                     println!(
                         "Max retries reached for {:?}, pushed to DLQ",
@@ -424,7 +393,7 @@ async fn run_notification_worker(
                         .await
                         .is_ok()
                         {
-                            commit(&consumer, &message);
+                            kafka::commit(&consumer, &message);
                         }
                     }
                 } else {
@@ -443,7 +412,7 @@ async fn run_notification_worker(
                         )
                         .await
                         {
-                            Ok(_) => commit(&consumer, &message),
+                            Ok(_) => kafka::commit(&consumer, &message),
                             Err(error) => auction_observability::report_error(
                                 "notification-worker",
                                 "notification_retry_publish",
@@ -464,14 +433,14 @@ async fn run_notification_worker(
                         "offset": message.offset(),
                     }),
                 );
-                if publish_dlq(
+                if kafka::publish_dlq(
                     &producer,
                     &message,
                     &format!("MALFORMED_NOTIFICATION:{error}"),
                 )
                 .await
                 {
-                    commit(&consumer, &message);
+                    kafka::commit(&consumer, &message);
                 }
             }
         }
@@ -536,8 +505,9 @@ async fn run_sync_worker(
                             "offset": message.offset(),
                         }),
                     );
-                    if publish_dlq(&producer, &message, &format!("MALFORMED_SYNC:{e}")).await {
-                        commit(&consumer, &message);
+                    if kafka::publish_dlq(&producer, &message, &format!("MALFORMED_SYNC:{e}")).await
+                    {
+                        kafka::commit(&consumer, &message);
                     }
                     continue;
                 }
@@ -555,8 +525,8 @@ async fn run_sync_worker(
                         "offset": message.offset(),
                     }),
                 );
-                if publish_dlq(&producer, &message, "SYNC_MISSING_AUCTION_ID").await {
-                    commit(&consumer, &message);
+                if kafka::publish_dlq(&producer, &message, "SYNC_MISSING_AUCTION_ID").await {
+                    kafka::commit(&consumer, &message);
                 }
                 continue;
             }
@@ -571,8 +541,8 @@ async fn run_sync_worker(
                     "sync record contains an invalid auction UUID",
                     serde_json::json!({"auction_id": auction_id_str}),
                 );
-                if publish_dlq(&producer, &message, "SYNC_INVALID_AUCTION_ID").await {
-                    commit(&consumer, &message);
+                if kafka::publish_dlq(&producer, &message, "SYNC_INVALID_AUCTION_ID").await {
+                    kafka::commit(&consumer, &message);
                 }
                 continue;
             }
@@ -794,23 +764,23 @@ async fn run_sync_worker(
                     .values(&new_bids)
                     .on_conflict_do_nothing()
                     .execute(&mut db_conn)
-                {
-                    auction_observability::report_error(
-                        "notification-worker",
-                        "sync_bid_insert",
-                        e.to_string(),
-                        serde_json::json!({
-                            "auction_id": auction_id_str,
-                            "attempt": attempts,
-                            "bid_count": new_bids.len(),
-                        }),
-                    );
-                    if attempts >= 3 {
-                        break false;
-                    }
-                    tokio::time::sleep(std::time::Duration::from_secs(attempts as u64 * 2)).await;
-                    continue;
+            {
+                auction_observability::report_error(
+                    "notification-worker",
+                    "sync_bid_insert",
+                    e.to_string(),
+                    serde_json::json!({
+                        "auction_id": auction_id_str,
+                        "attempt": attempts,
+                        "bid_count": new_bids.len(),
+                    }),
+                );
+                if attempts >= 3 {
+                    break false;
                 }
+                tokio::time::sleep(std::time::Duration::from_secs(attempts as u64 * 2)).await;
+                continue;
+            }
 
             // 4. Atomically delete all per-auction Redis artifacts.
             //    Redis DEL / HDEL / ZREM on non-existent keys always return 0 — never an error.
@@ -826,11 +796,12 @@ async fn run_sync_worker(
                 .hdel(auction_redis::AUCTION_STATE_HASH_KEY, &auction_id_str) // auction:states
                 .hdel(auction_redis::AUCTION_INITIALIZED_HASH_KEY, &auction_id_str) // auction:initialized_hash
                 .zrem(auction_redis::AUCTION_SCHEDULE_ZSET_KEY, &auction_id_str) // auction:schedule_zset
-                // Participants bitmap (auction:participants:{id})
-                .del(format!(
-                    "{}:{}",
-                    auction_redis::AUCTION_PARTICIPANTS_PREFIX,
-                    auction_id_str
+                // Participants bitmap ({auction-id}:participants)
+                .del(auction_redis::format_participants_key(&auction_id_str))
+                // Compatibility cleanup for registrations created before the
+                // cluster-safe participant key was introduced.
+                .del(auction_redis::format_legacy_participants_key(
+                    &auction_id_str,
                 ))
                 .query_async(&mut *con)
                 .await;
@@ -860,7 +831,7 @@ async fn run_sync_worker(
         };
 
         if success {
-            commit(&consumer, &message);
+            kafka::commit(&consumer, &message);
         } else {
             auction_observability::report_error(
                 "notification-worker",
@@ -868,8 +839,8 @@ async fn run_sync_worker(
                 "auction finalization retries exhausted",
                 serde_json::json!({"auction_id": auction_id_str}),
             );
-            if publish_dlq(&producer, &message, "SYNC_RETRIES_EXHAUSTED").await {
-                commit(&consumer, &message);
+            if kafka::publish_dlq(&producer, &message, "SYNC_RETRIES_EXHAUSTED").await {
+                kafka::commit(&consumer, &message);
             }
         }
     }
@@ -969,97 +940,7 @@ async fn run_sweep_worker(
     }
 }
 
-async fn wait_for_topics() {
-    let mut delay = 1_u64;
-    loop {
-        match auction_kafka::ensure_topics().await {
-            Ok(()) => return,
-            Err(error) => {
-                auction_observability::report_error(
-                    "notification-worker",
-                    "topic_setup",
-                    error,
-                    serde_json::json!({"retry_in_seconds": delay}),
-                );
-                tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
-                delay = (delay * 2).min(60);
-            }
-        }
-    }
-}
-
-fn commit<M: Message>(consumer: &StreamConsumer, message: &M) {
-    let mut offsets = TopicPartitionList::new();
-    if let Err(error) = offsets.add_partition_offset(
-        message.topic(),
-        message.partition(),
-        Offset::Offset(message.offset() + 1),
-    ) {
-        auction_observability::report_error(
-            "notification-worker",
-            "offset_commit_build",
-            error.to_string(),
-            serde_json::json!({
-                "topic": message.topic(),
-                "partition": message.partition(),
-                "offset": message.offset(),
-            }),
-        );
-        return;
-    }
-    if let Err(error) = consumer.commit(&offsets, CommitMode::Async) {
-        auction_observability::report_error(
-            "notification-worker",
-            "offset_commit",
-            error.to_string(),
-            serde_json::json!({
-                "topic": message.topic(),
-                "partition": message.partition(),
-                "offset": message.offset(),
-            }),
-        );
-    }
-}
-
-async fn publish_dlq<M: Message>(producer: &FutureProducer, message: &M, reason: &str) -> bool {
-    let key = message
-        .key_view::<str>()
-        .and_then(Result::ok)
-        .unwrap_or("unknown");
-    let payload = serde_json::json!({
-        "source_topic": message.topic(),
-        "source_partition": message.partition(),
-        "source_offset": message.offset(),
-        "reason": reason,
-        "payload": String::from_utf8_lossy(message.payload().unwrap_or_default()),
-    })
-    .to_string();
-    match auction_kafka::publish(producer, auction_kafka::DLQ_TOPIC, key, payload.as_bytes()).await
-    {
-        Ok(_) => true,
-        Err(error) => {
-            auction_observability::report_error(
-                "notification-worker",
-                "dlq_publish",
-                error,
-                serde_json::json!({
-                    "source_topic": message.topic(),
-                    "partition": message.partition(),
-                    "offset": message.offset(),
-                }),
-            );
-            false
-        }
-    }
-}
-
-/// Diesel queryable row for the sweep query (only needs `id`).
-#[derive(diesel::QueryableByName)]
-struct IdRow {
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
-    id: uuid::Uuid,
-}
-
+#[allow(dead_code)]
 async fn simulate_send_email(email_addr: &str, payload: &NotificationPayload) -> bool {
     use lettre::{
         AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,

@@ -3,9 +3,9 @@ mod es;
 mod openai;
 
 use axum::{
+    Json, Router,
     extract::{Query, State},
     routing::get,
-    Json, Router,
 };
 use serde::Deserialize;
 
@@ -27,7 +27,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     dotenvy::dotenv().ok();
     let _telemetry = auction_observability::init_telemetry("search-server")?;
 
-    let es_url = std::env::var("ELASTICSEARCH_URL").unwrap_or_else(|_| "http://localhost:9200".into());
+    let es_url =
+        std::env::var("ELASTICSEARCH_URL").unwrap_or_else(|_| "http://localhost:9200".into());
     let transport = elasticsearch::http::transport::Transport::single_node(&es_url)?;
     let es_client = elasticsearch::Elasticsearch::new(transport);
 

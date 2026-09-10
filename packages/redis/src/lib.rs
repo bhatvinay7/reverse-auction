@@ -25,6 +25,13 @@ pub fn format_participants_key(auction_id: &str) -> String {
     format!("{{{}}}:participants", auction_id)
 }
 
+/// Pre-cluster key used before the shared participant-key contract was
+/// introduced. Read only as a short-lived migration fallback; new writes must
+/// always use `format_participants_key`.
+pub fn format_legacy_participants_key(auction_id: &str) -> String {
+    format!("{}:{}", AUCTION_PARTICIPANTS_PREFIX, auction_id)
+}
+
 pub fn format_zset_key(auction_id: &str) -> String {
     format!("{{{}}}:zset:low_bids", auction_id)
 }
@@ -174,6 +181,18 @@ mod tests {
         assert_eq!(
             super::format_auction_catalog_key(7, "user-123"),
             "auction:catalog:7:user:user-123"
+        );
+    }
+
+    #[test]
+    fn participant_keys_have_a_canonical_cluster_safe_form() {
+        assert_eq!(
+            super::format_participants_key("auction-1"),
+            "{auction-1}:participants"
+        );
+        assert_eq!(
+            super::format_legacy_participants_key("auction-1"),
+            "auction:participants:auction-1"
         );
     }
 }

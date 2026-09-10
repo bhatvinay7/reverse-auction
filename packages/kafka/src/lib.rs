@@ -248,6 +248,7 @@ pub async fn ensure_topics() -> Result<(), String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::decode_pem_base64;
 

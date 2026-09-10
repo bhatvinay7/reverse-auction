@@ -68,7 +68,7 @@ pub async fn leave_auction_handler(
         user_id,
     )
     .await?;
-    
+
     Ok(Json(json!({
         "message": "Successfully unregistered from the auction"
     })))
@@ -81,12 +81,9 @@ pub async fn get_auctions_handler(
     let user_id = Uuid::parse_str(&claims.sub)
         .map_err(|_| AppError::BadRequest("Invalid user id in token".into()))?;
 
-    let auctions = crate::services::auction::get_auctions_service(
-        &state.db_pool,
-        &state.redis_pool,
-        user_id,
-    )
-    .await?;
+    let auctions =
+        crate::services::auction::get_auctions_service(&state.db_pool, &state.redis_pool, user_id)
+            .await?;
     Ok(Json(json!({
         "auctions": auctions
     })))
@@ -182,7 +179,8 @@ pub async fn get_auction_discussion_handler(
         auction_id,
         page,
         limit,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(json!({
         "messages": messages,
@@ -212,7 +210,8 @@ pub async fn post_auction_discussion_handler(
         user_id,
         username,
         payload.message,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(json!({
         "message": "Message posted successfully",

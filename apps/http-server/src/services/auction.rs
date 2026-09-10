@@ -100,13 +100,17 @@ pub async fn create_auction_service(
         .auction_start_time
         .parse::<chrono::DateTime<chrono::Utc>>()
         .map(|dt| dt.naive_utc())
-        .map_err(|_| AppError::BadRequest("auction_start_time must be a valid UTC timestamp".into()))?;
+        .map_err(|_| {
+            AppError::BadRequest("auction_start_time must be a valid UTC timestamp".into())
+        })?;
 
     let requested_end_time = payload
         .auction_end_time
         .parse::<chrono::DateTime<chrono::Utc>>()
         .map(|dt| dt.naive_utc())
-        .map_err(|_| AppError::BadRequest("auction_end_time must be a valid UTC timestamp".into()))?;
+        .map_err(|_| {
+            AppError::BadRequest("auction_end_time must be a valid UTC timestamp".into())
+        })?;
 
     let duration = requested_end_time - start_time;
     if duration <= chrono::Duration::zero() {
@@ -352,7 +356,10 @@ async fn set_participant_bit(
     user_id: Uuid,
 ) -> Result<(), AppError> {
     let offset = (user_id.as_u128() % (1 << 31)) as usize;
-    let bitmap_key = format!("auction:participants:{}", auction_id);
+    // Use the cluster hash-tagged key shared with scheduler, ws-server, and
+    // gateway-keeper. Keeping this in the redis package prevents one service
+    // from granting access in a key that another service never reads.
+    let bitmap_key = auction_redis::format_participants_key(&auction_id.to_string());
     let mut redis_conn = redis_pool.get().await.map_err(|error| {
         AppError::InternalServerError(format!("Registration access store is unavailable: {error}"))
     })?;
@@ -391,28 +398,35 @@ pub async fn leave_auction_service(
 
     let now = chrono::Utc::now().naive_utc();
     if now >= auction_start {
-        return Err(AppError::BadRequest("Too late to unregister from the auction".into()));
+        return Err(AppError::BadRequest(
+            "Too late to unregister from the auction".into(),
+        ));
     }
 
     // 2. Remove from Postgres DB
     let deleted = diesel::delete(
         ap_dsl::auction_participants
             .filter(ap_dsl::auction_id.eq(auction_id))
-            .filter(ap_dsl::user_id.eq(user_id))
+            .filter(ap_dsl::user_id.eq(user_id)),
     )
     .execute(&mut conn)
     .map_err(|e| AppError::InternalServerError(format!("Failed to leave auction: {}", e)))?;
 
     if deleted == 0 {
-        return Err(AppError::BadRequest("You are not registered for this auction".into()));
+        return Err(AppError::BadRequest(
+            "You are not registered for this auction".into(),
+        ));
     }
 
     // 3. Clear the participant bit in Redis
     let offset = (user_id.as_u128() % (1 << 31)) as usize;
-    let bitmap_key = format!("auction:participants:{}", auction_id);
+    let bitmap_key = auction_redis::format_participants_key(&auction_id.to_string());
+    let legacy_bitmap_key = auction_redis::format_legacy_participants_key(&auction_id.to_string());
     if let Ok(mut redis_conn) = redis_pool.get().await {
         let _: redis::RedisResult<bool> =
             redis::AsyncCommands::setbit(&mut *redis_conn, &bitmap_key, offset, false).await;
+        let _: redis::RedisResult<bool> =
+            redis::AsyncCommands::setbit(&mut *redis_conn, &legacy_bitmap_key, offset, false).await;
     }
 
     // 4. Invalidate the auction catalog cache for this user
@@ -426,8 +440,8 @@ pub async fn get_auctions_service(
     redis_pool: &bb8::Pool<bb8_redis::RedisConnectionManager>,
     user_id: Uuid,
 ) -> Result<Vec<serde_json::Value>, AppError> {
-    use redis::AsyncCommands;
     use db::schema::auctions::dsl::*;
+    use redis::AsyncCommands;
 
     let cache_version = auction_catalog_version(redis_pool).await;
     let cache_key = auction_redis::format_auction_catalog_key(cache_version, &user_id.to_string());
@@ -574,9 +588,7 @@ pub async fn get_auctions_service(
     Ok(json_results)
 }
 
-async fn auction_catalog_version(
-    redis_pool: &bb8::Pool<bb8_redis::RedisConnectionManager>,
-) -> u64 {
+async fn auction_catalog_version(redis_pool: &bb8::Pool<bb8_redis::RedisConnectionManager>) -> u64 {
     use redis::AsyncCommands;
     let Ok(mut redis_conn) = redis_pool.get().await else {
         return 0;
@@ -589,9 +601,7 @@ async fn auction_catalog_version(
         .unwrap_or(0)
 }
 
-async fn invalidate_auction_catalog(
-    redis_pool: &bb8::Pool<bb8_redis::RedisConnectionManager>,
-) {
+async fn invalidate_auction_catalog(redis_pool: &bb8::Pool<bb8_redis::RedisConnectionManager>) {
     use redis::AsyncCommands;
     if let Ok(mut redis_conn) = redis_pool.get().await {
         let _: redis::RedisResult<u64> = redis_conn
@@ -873,8 +883,8 @@ pub async fn post_auction_discussion_service(
     username: String,
     message: String,
 ) -> Result<serde_json::Value, AppError> {
-    use db::schema::auction_messages;
     use db::models::NewAuctionMessage;
+    use db::schema::auction_messages;
     use redis::AsyncCommands;
 
     let mut conn = pool
@@ -932,7 +942,8 @@ pub async fn get_auction_discussion_service(
     if page == 1 {
         let redis_key = auction_redis::format_discussion_key(&target_auction_id.to_string());
         if let Ok(mut redis_conn) = redis_pool.get().await {
-            let cached: redis::RedisResult<Vec<String>> = redis_conn.lrange(&redis_key, 0, (limit - 1) as isize).await;
+            let cached: redis::RedisResult<Vec<String>> =
+                redis_conn.lrange(&redis_key, 0, (limit - 1) as isize).await;
             if let Ok(cached_msgs) = cached {
                 if !cached_msgs.is_empty() {
                     let mut json_msgs = Vec::new();
@@ -961,16 +972,19 @@ pub async fn get_auction_discussion_service(
         .load::<db::models::AuctionMessage>(&mut conn)
         .map_err(|e| AppError::InternalServerError(format!("Failed to fetch messages: {}", e)))?;
 
-    let json_results: Vec<serde_json::Value> = results.into_iter().map(|m| {
-        serde_json::json!({
-            "id": m.id,
-            "auction_id": m.auction_id,
-            "user_id": m.user_id,
-            "username": m.username,
-            "message": m.message,
-            "created_at": m.created_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+    let json_results: Vec<serde_json::Value> = results
+        .into_iter()
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id,
+                "auction_id": m.auction_id,
+                "user_id": m.user_id,
+                "username": m.username,
+                "message": m.message,
+                "created_at": m.created_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(json_results)
 }

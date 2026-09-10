@@ -1,4 +1,4 @@
-mod auth;
+use ws_server::auth;
 
 use axum::routing::get;
 use futures_util::StreamExt;
@@ -70,11 +70,9 @@ async fn on_connect<A: Adapter>(
         }
     };
 
-    let init_key = format!("auction:initialized:{}", auction_id);
-    let is_init: Result<Option<String>, _> = redis_conn.get(&init_key).await;
-    match is_init {
-        Ok(Some(val)) if val == "1" => {}
-        _ => {
+    match auth::is_auction_initialized(&mut *redis_conn, &auction_id).await {
+        Ok(true) => {}
+        Ok(false) => {
             println!(
                 "Auction {} not initialized yet or has expired. Allowing connection to wait.",
                 auction_id
@@ -82,24 +80,33 @@ async fn on_connect<A: Adapter>(
             socket.join(auction_id.clone());
             return;
         }
+        Err(error) => {
+            println!(
+                "Failed to check initialization for auction {}: {}",
+                auction_id, error
+            );
+            let _ = socket.disconnect();
+            return;
+        }
     }
 
     let mut user_id_str = auth.user_id.unwrap_or_default();
 
     if let Some(token) = auth.token
-        && !token.is_empty() {
-            let secret = std::env::var("JWT_SECRET")
-                .unwrap_or_else(|_| "super_secret_key_change_me".to_string());
-            if let Ok(token_data) = jsonwebtoken::decode::<Claims>(
-                &token,
-                &jsonwebtoken::DecodingKey::from_secret(secret.as_ref()),
-                &jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256),
-            ) {
-                user_id_str = token_data.claims.sub;
-            } else {
-                println!("[ws-server] Invalid or expired JWT token provided in connection payload");
-            }
+        && !token.is_empty()
+    {
+        let secret = std::env::var("JWT_SECRET")
+            .unwrap_or_else(|_| "super_secret_key_change_me".to_string());
+        if let Ok(token_data) = jsonwebtoken::decode::<Claims>(
+            &token,
+            &jsonwebtoken::DecodingKey::from_secret(secret.as_ref()),
+            &jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256),
+        ) {
+            user_id_str = token_data.claims.sub;
+        } else {
+            println!("[ws-server] Invalid or expired JWT token provided in connection payload");
         }
+    }
 
     let is_participant =
         match auth::validate_participant(&mut *redis_conn, &auction_id, &user_id_str).await {
@@ -257,32 +264,24 @@ async fn on_connect<A: Adapter>(
                     }
                 };
 
-            if validation.is_completed {
-                let _ = _s.emit("error", "Auction has ended.");
-                return;
-            }
-
             // Validate Participant — Ok(false) means not a participant, Ok(true) means allowed
-            match auth::validate_participant(
+            let is_participant = match auth::validate_participant(
                 &mut *redis_conn,
                 &inbound.auction_id,
                 &inbound.bidder_id,
             )
             .await
             {
-                Ok(true) => {} // allowed
-                Ok(false) => {
-                    println!(
-                        "[ws-server][place_bid] bidder {} is NOT a participant in auction {}",
-                        inbound.bidder_id, inbound.auction_id
-                    );
-                    let _ = _s.emit("error", "You are not a participant in this auction.");
-                    return;
-                }
+                Ok(is_participant) => is_participant,
                 Err(e) => {
                     let _ = _s.emit("error", &e);
                     return;
                 }
+            };
+
+            if let Err(error) = auth::authorize_bid(&validation, is_participant) {
+                let _ = _s.emit("error", error);
+                return;
             }
 
             if let Ok(mut client) = grpc_client::connect(state.grpc_url.clone()).await {
@@ -402,32 +401,32 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         while let Some(msg) = stream.next().await {
             if let Ok(payload_str) = msg.get_payload::<String>()
                 && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&payload_str)
-                    && let (Some(auction_id), Some(payload)) =
-                        (parsed["auction_id"].as_str(), parsed.get("payload"))
-                    {
-                        match io_clone.of("/") {
-                            Some(namespace) => {
-                                if let Err(error) = namespace
-                                    .to(auction_id.to_string())
-                                    .emit("bid_update", payload)
-                                    .await
-                                {
-                                    auction_observability::report_error(
-                                        "ws-server",
-                                        "socket_emit",
-                                        error.to_string(),
-                                        serde_json::json!({"auction_id": auction_id}),
-                                    );
-                                }
-                            }
-                            None => auction_observability::report_error(
+                && let (Some(auction_id), Some(payload)) =
+                    (parsed["auction_id"].as_str(), parsed.get("payload"))
+            {
+                match io_clone.of("/") {
+                    Some(namespace) => {
+                        if let Err(error) = namespace
+                            .to(auction_id.to_string())
+                            .emit("bid_update", payload)
+                            .await
+                        {
+                            auction_observability::report_error(
                                 "ws-server",
-                                "socket_namespace_missing",
-                                "root Socket.IO namespace is unavailable",
+                                "socket_emit",
+                                error.to_string(),
                                 serde_json::json!({"auction_id": auction_id}),
-                            ),
+                            );
                         }
                     }
+                    None => auction_observability::report_error(
+                        "ws-server",
+                        "socket_namespace_missing",
+                        "root Socket.IO namespace is unavailable",
+                        serde_json::json!({"auction_id": auction_id}),
+                    ),
+                }
+            }
         }
     });
 

@@ -353,9 +353,13 @@ async fn test_join_auction_success() {
     let user_id = auth_resp.get("user_id").unwrap().as_str().unwrap();
     let token = auth_resp.get("token").unwrap().as_str().unwrap();
 
-    // Create an auction starting in 10 minutes (so it's valid to join)
+    // Create an auction starting in 10 minutes. The ten-minute duration is
+    // within the API's allowed 10–20 minute auction window.
     let future_start = chrono::Utc::now() + chrono::Duration::minutes(10);
     let start_time_str = future_start.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let end_time_str = (future_start + chrono::Duration::minutes(10))
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
     let req_create = Request::builder()
         .uri("/api/auction/create") // Updated to correct route
         .method("POST")
@@ -376,7 +380,7 @@ async fn test_join_auction_success() {
                 "pickup_date_start": "2024-01-01T00:00:00Z",
                 "pickup_date_end": "2024-01-02T00:00:00Z",
                 "auction_start_time": start_time_str,
-                "auction_end_time": start_time_str,
+                "auction_end_time": end_time_str,
                 "weight": 1500.5,
                 "length": 10.0,
                 "width": 5.5,
@@ -426,4 +430,16 @@ async fn test_join_auction_success() {
     );
 
     assert_eq!(status, StatusCode::OK);
+
+    // The registration must be visible to ws-server and auction-engine through
+    // their shared cluster-safe bitmap key.
+    let user_uuid = uuid::Uuid::parse_str(user_id).unwrap();
+    let participant_key = auction_redis::format_participants_key(auction_id);
+    let participant_offset = (user_uuid.as_u128() % (1 << 31)) as usize;
+    let mut redis = state.redis_pool.get().await.unwrap();
+    let is_participant: i64 = redis
+        .getbit(participant_key, participant_offset)
+        .await
+        .unwrap();
+    assert_eq!(is_participant, 1);
 }

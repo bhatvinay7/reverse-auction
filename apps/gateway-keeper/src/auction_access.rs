@@ -19,7 +19,8 @@ pub async fn require_participant(
         )
     })?;
     let offset = (identity.user_id.as_u128() % (1 << 31)) as usize;
-    let key = format!("auction:participants:{auction_id}");
+    let auction_id = auction_id.to_string();
+    let key = auction_redis::format_participants_key(&auction_id);
     let bit: i64 = connection.getbit(key, offset).await.map_err(|_| {
         GatewayError::new(
             axum::http::StatusCode::SERVICE_UNAVAILABLE,
@@ -30,10 +31,22 @@ pub async fn require_participant(
     if bit == 1 {
         Ok(())
     } else {
-        Err(GatewayError::new(
-            axum::http::StatusCode::FORBIDDEN,
-            "AUCTION_ACCESS_DENIED",
-            "Join this auction before opening a live connection",
-        ))
+        let legacy_key = auction_redis::format_legacy_participants_key(&auction_id);
+        let legacy_bit: i64 = connection.getbit(legacy_key, offset).await.map_err(|_| {
+            GatewayError::new(
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "ACCESS_STORE_UNAVAILABLE",
+                "Auction access validation is temporarily unavailable",
+            )
+        })?;
+        if legacy_bit == 1 {
+            Ok(())
+        } else {
+            Err(GatewayError::new(
+                axum::http::StatusCode::FORBIDDEN,
+                "AUCTION_ACCESS_DENIED",
+                "Join this auction before opening a live connection",
+            ))
+        }
     }
 }

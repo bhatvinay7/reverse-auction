@@ -1,6 +1,6 @@
 use crate::controllers::auction::{
-    create_auction_handler, get_auction_history_handler, get_auctions_handler, join_auction_handler,
-    leave_auction_handler,
+    create_auction_handler, get_auction_history_handler, get_auctions_handler,
+    join_auction_handler, leave_auction_handler,
 };
 use crate::state::AppState;
 use axum::{

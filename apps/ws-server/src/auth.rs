@@ -1,6 +1,29 @@
 use serde_json::Value;
 use uuid::Uuid;
 
+fn participant_offset(user_id: Uuid) -> usize {
+    (user_id.as_u128() % (1 << 31)) as usize
+}
+
+/// Returns whether the scheduler has made the auction state available.
+///
+/// This is deliberately a hash lookup: the scheduler writes one field per
+/// auction to `auction:initialized_hash`, rather than individual string keys.
+pub async fn is_auction_initialized<C: redis::AsyncCommands>(
+    redis_conn: &mut C,
+    auction_id: &str,
+) -> Result<bool, String> {
+    let initialized: Option<String> = redis_conn
+        .hget(auction_redis::AUCTION_INITIALIZED_HASH_KEY, auction_id)
+        .await
+        .map_err(|error| format!("Failed to read auction initialization state: {error}"))?;
+    Ok(is_initialized_value(initialized.as_deref()))
+}
+
+pub fn is_initialized_value(value: Option<&str>) -> bool {
+    value == Some("1")
+}
+
 pub struct AuctionValidationResult {
     pub is_completed: bool,
     pub join_expired: bool,
@@ -22,16 +45,22 @@ pub async fn validate_participant<C: redis::AsyncCommands>(
         return Ok(false);
     }
     if let Ok(user_uuid) = Uuid::parse_str(user_id_str) {
-        let offset = (user_uuid.as_u128() % (1 << 31)) as u32;
-        let bitmap_key = format!("auction:participants:{}", auction_id);
-        let raw: Result<i64, _> = redis_conn.getbit(&bitmap_key, offset as usize).await;
+        let offset = participant_offset(user_uuid);
+        let bitmap_key = auction_redis::format_participants_key(auction_id);
+        let raw: Result<i64, _> = redis_conn.getbit(&bitmap_key, offset).await;
         println!(
             "[ws-server][participant] user={} offset={} bitmap_key={} raw_bit={:?}",
             user_id_str, offset, bitmap_key, raw
         );
         match raw {
             Ok(1) => Ok(true),
-            Ok(_) => Ok(false),
+            Ok(_) => {
+                // Keep existing live registrations working while clients move
+                // from the old non-cluster-safe key to the canonical key.
+                let legacy_key = auction_redis::format_legacy_participants_key(auction_id);
+                let legacy: Result<i64, _> = redis_conn.getbit(&legacy_key, offset).await;
+                Ok(legacy.unwrap_or(0) == 1)
+            }
             Err(e) => {
                 println!("[ws-server][participant] Redis GETBIT error: {}", e);
                 Ok(false)
@@ -43,6 +72,22 @@ pub async fn validate_participant<C: redis::AsyncCommands>(
             user_id_str
         );
         Ok(false)
+    }
+}
+
+/// The checks which must pass before a websocket bid is sent to auction-engine.
+/// Keeping this independent of Socket.IO makes the authorization behaviour
+/// regression-testable without a running gRPC/Kafka stack.
+pub fn authorize_bid(
+    validation: &AuctionValidationResult,
+    is_participant: bool,
+) -> Result<(), &'static str> {
+    if validation.is_completed {
+        Err("Auction has ended.")
+    } else if !is_participant {
+        Err("You are not a participant in this auction.")
+    } else {
+        Ok(())
     }
 }
 
@@ -74,18 +119,17 @@ pub async fn validate_auction_state<C: redis::AsyncCommands>(
             // not from schedule.start_time (which is the scheduler trigger time).
             if let Some(schedule) = state_json.get("schedule")
                 && let Some(start_time_str) = schedule.get("start_time").and_then(|st| st.as_str())
-                {
-                    let st_str = start_time_str.trim_end_matches('Z');
-                    let start_time =
-                        chrono::NaiveDateTime::parse_from_str(st_str, "%Y-%m-%dT%H:%M:%S%.f")
-                            .or_else(|_| {
-                                chrono::NaiveDateTime::parse_from_str(st_str, "%Y-%m-%dT%H:%M:%S")
-                            });
-                    if let Ok(st) = start_time {
-                        // Use schedule.start_time only as fallback
-                        auction_start_time_ms = st.and_utc().timestamp_millis();
-                    }
+            {
+                let st_str = start_time_str.trim_end_matches('Z');
+                let start_time =
+                    chrono::NaiveDateTime::parse_from_str(st_str, "%Y-%m-%dT%H:%M:%S%.f").or_else(
+                        |_| chrono::NaiveDateTime::parse_from_str(st_str, "%Y-%m-%dT%H:%M:%S"),
+                    );
+                if let Ok(st) = start_time {
+                    // Use schedule.start_time only as fallback
+                    auction_start_time_ms = st.and_utc().timestamp_millis();
                 }
+            }
 
             if let Some(auction) = state_json
                 .get("auction")

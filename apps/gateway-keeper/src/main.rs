@@ -13,7 +13,7 @@ use std::{net::SocketAddr, time::Duration};
 use axum::{
     Router,
     extract::DefaultBodyLimit,
-    http::{header, HeaderValue, Method},
+    http::{HeaderValue, Method, header},
     routing::{any, get, post},
 };
 use tower_http::{
@@ -44,8 +44,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let state = GatewayState::from_env().await?;
-    let allowed_origins_str = std::env::var("CORS_ALLOWED_ORIGIN")
-        .unwrap_or_else(|_| "http://localhost:3000".into());
+    let allowed_origins_str =
+        std::env::var("CORS_ALLOWED_ORIGIN").unwrap_or_else(|_| "http://localhost:3000".into());
     let allowed_origins: Vec<HeaderValue> = allowed_origins_str
         .split(',')
         .map(|s| s.trim().parse::<HeaderValue>().unwrap())

@@ -277,7 +277,11 @@ async fn wal_reader_loop(
 
 fn into_kafka_event(event: WalEvent) -> Option<(&'static str, String, Vec<u8>)> {
     match event {
-        WalEvent::Insert { table, fields } | WalEvent::Update { table, new_fields: fields } => {
+        WalEvent::Insert { table, fields }
+        | WalEvent::Update {
+            table,
+            new_fields: fields,
+        } => {
             let topic = match table.as_str() {
                 "auctions" => auction_kafka::CDC_AUCTIONS_TOPIC,
                 "auction_listings" => auction_kafka::CDC_AUCTION_LISTINGS_TOPIC,
@@ -296,7 +300,9 @@ fn into_kafka_event(event: WalEvent) -> Option<(&'static str, String, Vec<u8>)> 
             };
             let key = key_fields.get("id")?.as_deref()?.to_string();
             // Delete payload can be empty or just {"deleted": true}
-            let payload = serde_json::json!({"_deleted": true, "id": key}).to_string().into_bytes();
+            let payload = serde_json::json!({"_deleted": true, "id": key})
+                .to_string()
+                .into_bytes();
             Some((topic, key, payload))
         }
 
@@ -311,7 +317,13 @@ async fn publisher_task(
     lsn_ack_tx: mpsc::UnboundedSender<Lsn>,
     producer: rdkafka::producer::FutureProducer,
 ) {
-    while let Some(WalMessage { lsn, topic, key, payload }) = rx.recv().await {
+    while let Some(WalMessage {
+        lsn,
+        topic,
+        key,
+        payload,
+    }) = rx.recv().await
+    {
         let mut retries = 0;
         loop {
             match auction_kafka::publish(&producer, topic, &key, &payload).await {
