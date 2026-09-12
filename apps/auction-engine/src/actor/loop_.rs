@@ -7,7 +7,9 @@ use uuid::Uuid;
 
 use crate::{
     ledger,
-    registry::{CachePaddedAuctionState, STATE_ACTIVE, STATE_CLOSED, STATE_ENDING, STATE_INITIALIZING},
+    registry::{
+        CachePaddedAuctionState, STATE_ACTIVE, STATE_CLOSED, STATE_ENDING, STATE_INITIALIZING,
+    },
     types::{ActorExit, AuctionTask, AuctionTaskResult, LedgerWrite, is_better_bid},
 };
 
@@ -77,9 +79,9 @@ pub(super) async fn run_actor_loop(
         };
 
         if task.bid.auction_id != auction_id {
-            let _ = task
-                .respond_to
-                .send(AuctionTaskResult::Rejected("AUCTION_ID_MISMATCH".to_string()));
+            let _ = task.respond_to.send(AuctionTaskResult::Rejected(
+                "AUCTION_ID_MISMATCH".to_string(),
+            ));
             continue;
         }
 
@@ -167,9 +169,15 @@ async fn close_and_exit(
 ) -> ActorExit {
     state.lifecycle.store(STATE_ENDING, Ordering::Release);
     reject_queued_tasks(receiver, "AUCTION_ENDED");
-    ledger::close_auction(auction_id, auction_type, reserve_price, redis_pool, kafka_producer)
-        .await
-        .unwrap_or_else(|error| panic!("auction close failed: {error}"));
+    ledger::close_auction(
+        auction_id,
+        auction_type,
+        reserve_price,
+        redis_pool,
+        kafka_producer,
+    )
+    .await
+    .unwrap_or_else(|error| panic!("auction close failed: {error}"));
     state.lifecycle.store(STATE_CLOSED, Ordering::Release);
     ActorExit::AuctionEnded
 }

@@ -53,10 +53,9 @@ pub(super) async fn load_runtime(
             {
                 let value = value.trim_end_matches('Z');
                 if let Ok(end) =
-                    chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f")
-                        .or_else(|_| {
-                            chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S")
-                        })
+                    chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f").or_else(
+                        |_| chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S"),
+                    )
                 {
                     end_timestamp_ms = end.and_utc().timestamp_millis();
                 }
@@ -81,7 +80,7 @@ pub(super) async fn load_runtime(
                 .as_str()
             {
                 "FORWARD" => AuctionType::Forward,
-                _         => AuctionType::Reverse,
+                _ => AuctionType::Reverse,
             };
             minimum_bid_step = config
                 .get("minimum_bid_step")

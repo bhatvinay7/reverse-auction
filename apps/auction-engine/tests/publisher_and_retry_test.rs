@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use uuid::Uuid;
 
 use auction_engine::types::{AuctionTask, AuctionTaskResult, BidRequest};
@@ -74,7 +70,8 @@ async fn offset_retry_task_drains_queue_in_order() {
     // Enqueue offsets out of order to verify they drain in FIFO order
     let offsets = vec![5i64, 3, 7, 1, 9];
     for &offset in &offsets {
-        tx.try_send(("auction-bids".to_string(), 0, offset)).unwrap();
+        tx.try_send(("auction-bids".to_string(), 0, offset))
+            .unwrap();
     }
     drop(tx);
 
@@ -102,18 +99,24 @@ async fn publisher_notify_wakes_waiting_task() {
 
     // Give the task time to park on notified()
     tokio::time::sleep(Duration::from_millis(20)).await;
-    assert!(!woken.load(std::sync::atomic::Ordering::Acquire), "should not be woken before notify");
+    assert!(
+        !woken.load(std::sync::atomic::Ordering::Acquire),
+        "should not be woken before notify"
+    );
 
     notify.notify_one();
     tokio::time::sleep(Duration::from_millis(20)).await;
-    assert!(woken.load(std::sync::atomic::Ordering::Acquire), "should be woken after notify");
+    assert!(
+        woken.load(std::sync::atomic::Ordering::Acquire),
+        "should be woken after notify"
+    );
 }
 
 #[tokio::test]
 async fn publisher_notify_is_not_lost_if_task_not_yet_waiting() {
     // Notify fires before the task calls notified() – it must not be lost.
     let notify = Arc::new(tokio::sync::Notify::new());
-    notify.notify_one();  // fires before the listener is set up
+    notify.notify_one(); // fires before the listener is set up
 
     let completed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let completed_clone = completed.clone();
@@ -165,8 +168,11 @@ async fn pending_kafka_stream_is_written_atomically_with_bid() {
                 "auction_end_time": end_time,
             },
             "config": { "minimum_bid_step": 5.0 }
-        }).to_string(),
-    ).await.unwrap();
+        })
+        .to_string(),
+    )
+    .await
+    .unwrap();
 
     // Get or create actor (supervisor + publisher both start)
     let actor = registry.get_or_create(auction_id);
@@ -175,21 +181,25 @@ async fn pending_kafka_stream_is_written_atomically_with_bid() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let (respond_to, response) = tokio::sync::oneshot::channel();
-    actor.sender.send(AuctionTask {
-        request_id: "req-pending-stream-test".to_string(),
-        bid: BidRequest {
-            auction_id,
-            bidder_id: "bidder1".to_string(),
-            username: None,
-            amount: 90.0,
-            timestamp: chrono::Utc::now().timestamp_millis(),
-        },
-        source_topic: "auction-bids".to_string(),
-        source_partition: 0,
-        source_offset: 1,
-        trace_context: HashMap::new(),
-        respond_to,
-    }).await.unwrap();
+    actor
+        .sender
+        .send(AuctionTask {
+            request_id: "req-pending-stream-test".to_string(),
+            bid: BidRequest {
+                auction_id,
+                bidder_id: "bidder1".to_string(),
+                username: None,
+                amount: 90.0,
+                timestamp: chrono::Utc::now().timestamp_millis(),
+            },
+            source_topic: "auction-bids".to_string(),
+            source_partition: 0,
+            source_offset: 1,
+            trace_context: HashMap::new(),
+            respond_to,
+        })
+        .await
+        .unwrap();
 
     let result = tokio::time::timeout(Duration::from_secs(3), response)
         .await
@@ -213,7 +223,9 @@ async fn pending_kafka_stream_is_written_atomically_with_bid() {
             &auction_redis::format_live_stream(&id_str),
             &format!("{{{}}}:pending_kafka_events", id_str),
         ],
-    ).await.unwrap_or(());
+    )
+    .await
+    .unwrap_or(());
 }
 
 #[tokio::test]
@@ -250,29 +262,36 @@ async fn actor_replies_committed_before_kafka_publish_completes() {
                 "auction_end_time": end_time,
             },
             "config": { "minimum_bid_step": 1.0 }
-        }).to_string(),
-    ).await.unwrap();
+        })
+        .to_string(),
+    )
+    .await
+    .unwrap();
 
     let actor = registry.get_or_create(auction_id);
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let start = std::time::Instant::now();
     let (respond_to, response) = tokio::sync::oneshot::channel();
-    actor.sender.send(AuctionTask {
-        request_id: "req-latency-test".to_string(),
-        bid: BidRequest {
-            auction_id,
-            bidder_id: "bidder2".to_string(),
-            username: None,
-            amount: 99.0,
-            timestamp: chrono::Utc::now().timestamp_millis(),
-        },
-        source_topic: "auction-bids".to_string(),
-        source_partition: 0,
-        source_offset: 2,
-        trace_context: HashMap::new(),
-        respond_to,
-    }).await.unwrap();
+    actor
+        .sender
+        .send(AuctionTask {
+            request_id: "req-latency-test".to_string(),
+            bid: BidRequest {
+                auction_id,
+                bidder_id: "bidder2".to_string(),
+                username: None,
+                amount: 99.0,
+                timestamp: chrono::Utc::now().timestamp_millis(),
+            },
+            source_topic: "auction-bids".to_string(),
+            source_partition: 0,
+            source_offset: 2,
+            trace_context: HashMap::new(),
+            respond_to,
+        })
+        .await
+        .unwrap();
 
     let result = tokio::time::timeout(Duration::from_secs(2), response)
         .await
@@ -297,5 +316,7 @@ async fn actor_replies_committed_before_kafka_publish_completes() {
             &auction_redis::format_live_stream(&id_str),
             &format!("{{{}}}:pending_kafka_events", id_str),
         ],
-    ).await.unwrap_or(());
+    )
+    .await
+    .unwrap_or(());
 }

@@ -41,10 +41,13 @@ pub async fn consume(
             let mut attempts = 0;
             loop {
                 let mut offsets = TopicPartitionList::new();
-                if offsets.add_partition_offset(&topic, partition, Offset::Offset(offset)).is_err() {
+                if offsets
+                    .add_partition_offset(&topic, partition, Offset::Offset(offset))
+                    .is_err()
+                {
                     break;
                 }
-                
+
                 match consumer_ref.commit(&offsets, CommitMode::Async) {
                     Ok(_) => break,
                     Err(error) => {
@@ -186,11 +189,7 @@ fn commit(
     let topic = message.topic().to_string();
     let partition = message.partition();
     let offset = message.offset() + 1;
-    if let Err(error) = offsets.add_partition_offset(
-        &topic,
-        partition,
-        Offset::Offset(offset),
-    ) {
+    if let Err(error) = offsets.add_partition_offset(&topic, partition, Offset::Offset(offset)) {
         auction_observability::report_error(
             "auction-engine",
             "offset_commit_build",

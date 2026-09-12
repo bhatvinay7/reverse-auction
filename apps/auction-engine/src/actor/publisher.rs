@@ -139,7 +139,14 @@ async fn publish_decision_with_retry(
 ) {
     let mut attempts = 0_u32;
     loop {
-        match auction_kafka::publish(producer, auction_kafka::BID_DECISION_TOPIC, auction_id, payload).await {
+        match auction_kafka::publish(
+            producer,
+            auction_kafka::BID_DECISION_TOPIC,
+            auction_id,
+            payload,
+        )
+        .await
+        {
             Ok(_) => return,
             Err(error) => {
                 attempts = attempts.saturating_add(1);
@@ -161,14 +168,26 @@ async fn publish_notification_with_retry(
     auction_id: &str,
     producer: &rdkafka::producer::FutureProducer,
 ) {
-    let request_id   = payload.get("request_id").and_then(|v| v.as_str()).unwrap_or_default();
-    let auction_type = payload.get("auction_type").and_then(|v| v.as_str()).unwrap_or_default();
-    let is_executed  = payload.get("is_executed").and_then(|v| v.as_bool()).unwrap_or(false);
-    let empty_bid    = serde_json::json!({});
-    let bid          = payload.get("bid").unwrap_or(&empty_bid);
-    let bidder_id    = bid.get("bidder_id").and_then(|v| v.as_str()).unwrap_or_default();
-    let amount       = bid.get("amount").and_then(|v| v.as_f64()).unwrap_or(0.0);
-    let timestamp    = bid.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0);
+    let request_id = payload
+        .get("request_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let auction_type = payload
+        .get("auction_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let is_executed = payload
+        .get("is_executed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let empty_bid = serde_json::json!({});
+    let bid = payload.get("bid").unwrap_or(&empty_bid);
+    let bidder_id = bid
+        .get("bidder_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    let amount = bid.get("amount").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let timestamp = bid.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0);
 
     let notification = serde_json::json!({
         "request_id":   request_id,

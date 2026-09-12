@@ -81,7 +81,11 @@ pub async fn write_bid(
 
         let mut connection = pool.get().await.map_err(|error| error.to_string())?;
         let _: () = connection
-            .xadd(&pending_stream_key, "*", &[("payload", payload_json.as_str())])
+            .xadd(
+                &pending_stream_key,
+                "*",
+                &[("payload", payload_json.as_str())],
+            )
             .await
             .map_err(|error| format!("failed to queue audit publish: {error}"))?;
 
@@ -125,8 +129,6 @@ pub async fn write_bid(
     publish_live_update(pool, task, &auction_id, &payload).await;
     Ok(LedgerWrite::Applied)
 }
-
-
 
 async fn publish_live_update(
     pool: &bb8::Pool<bb8_redis::RedisConnectionManager>,
