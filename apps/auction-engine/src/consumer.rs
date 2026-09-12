@@ -34,6 +34,39 @@ pub async fn consume(
     let mut stream = consumer.stream();
     let mut workers: HashMap<i32, mpsc::Sender<OwnedMessage>> = HashMap::new();
 
+    let (retry_tx, mut retry_rx) = mpsc::channel::<(String, i32, i64)>(10_000);
+    let consumer_ref = consumer.clone();
+    tokio::spawn(async move {
+        while let Some((topic, partition, offset)) = retry_rx.recv().await {
+            let mut attempts = 0;
+            loop {
+                let mut offsets = TopicPartitionList::new();
+                if offsets.add_partition_offset(&topic, partition, Offset::Offset(offset)).is_err() {
+                    break;
+                }
+                
+                match consumer_ref.commit(&offsets, CommitMode::Async) {
+                    Ok(_) => break,
+                    Err(error) => {
+                        attempts += 1;
+                        let delay = Duration::from_millis((100_u64 << attempts.min(6)).min(5_000));
+                        auction_observability::report_error(
+                            "auction-engine",
+                            "offset_commit_retry",
+                            error.to_string(),
+                            serde_json::json!({
+                                "partition": partition,
+                                "offset": offset,
+                                "attempt": attempts,
+                            }),
+                        );
+                        tokio::time::sleep(delay).await;
+                    }
+                }
+            }
+        }
+    });
+
     while let Some(result) = stream.next().await {
         let message = match result {
             Ok(message) => message.detach(),
@@ -56,6 +89,7 @@ pub async fn consume(
                 consumer.clone(),
                 registry.clone(),
                 producer.clone(),
+                retry_tx.clone(),
             ));
             sender
         });
@@ -72,6 +106,7 @@ async fn run_partition_worker(
     consumer: Arc<StreamConsumer>,
     registry: Arc<AuctionRegistry>,
     producer: rdkafka::producer::FutureProducer,
+    retry_tx: mpsc::Sender<(String, i32, i64)>,
 ) {
     while let Some(message) = receiver.recv().await {
         let payload = message.payload().unwrap_or_default();
@@ -81,13 +116,13 @@ async fn run_partition_worker(
             }
             Ok(_) => {
                 dead_letter_until_stored(&producer, &message, "INVALID_BID_AMOUNT").await;
-                commit(&consumer, &message);
+                commit(&consumer, &message, &retry_tx);
                 continue;
             }
             Err(error) => {
                 dead_letter_until_stored(&producer, &message, &format!("MALFORMED_BID:{error}"))
                     .await;
-                commit(&consumer, &message);
+                commit(&consumer, &message, &retry_tx);
                 continue;
             }
         };
@@ -115,12 +150,12 @@ async fn run_partition_worker(
             };
             match result {
                 AuctionTaskResult::Committed => {
-                    commit(&consumer, &message);
+                    commit(&consumer, &message, &retry_tx);
                     break;
                 }
                 AuctionTaskResult::Rejected(reason) => {
                     dead_letter_until_stored(&producer, &message, &reason).await;
-                    commit(&consumer, &message);
+                    commit(&consumer, &message, &retry_tx);
                     break;
                 }
                 AuctionTaskResult::Retryable(error) => {
@@ -142,20 +177,27 @@ async fn run_partition_worker(
     }
 }
 
-fn commit(consumer: &StreamConsumer, message: &OwnedMessage) {
+fn commit(
+    consumer: &StreamConsumer,
+    message: &OwnedMessage,
+    retry_tx: &mpsc::Sender<(String, i32, i64)>,
+) {
     let mut offsets = TopicPartitionList::new();
+    let topic = message.topic().to_string();
+    let partition = message.partition();
+    let offset = message.offset() + 1;
     if let Err(error) = offsets.add_partition_offset(
-        message.topic(),
-        message.partition(),
-        Offset::Offset(message.offset() + 1),
+        &topic,
+        partition,
+        Offset::Offset(offset),
     ) {
         auction_observability::report_error(
             "auction-engine",
             "offset_commit_build",
             error.to_string(),
             serde_json::json!({
-                "partition": message.partition(),
-                "offset": message.offset(),
+                "partition": partition,
+                "offset": offset,
             }),
         );
         return;
@@ -163,13 +205,14 @@ fn commit(consumer: &StreamConsumer, message: &OwnedMessage) {
     if let Err(error) = consumer.commit(&offsets, CommitMode::Async) {
         auction_observability::report_error(
             "auction-engine",
-            "offset_commit",
+            "offset_commit_enqueued_for_retry",
             error.to_string(),
             serde_json::json!({
-                "partition": message.partition(),
-                "offset": message.offset(),
+                "partition": partition,
+                "offset": offset,
             }),
         );
+        let _ = retry_tx.try_send((topic, partition, offset));
     }
 }
 

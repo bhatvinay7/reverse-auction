@@ -42,6 +42,11 @@ jobs:
         run: cargo check --workspace --all-targets --locked
       - name: Test auction engine and gateway
         run: cargo test -p auction-engine --lib --locked && cargo test -p gateway-keeper --locked
+      - name: Test bid ingestion and independent audit consumers
+        run: |
+          cargo test -p notification-worker --bin notification-worker --locked
+          cargo test -p ws-server --test bid_session --locked
+          cargo test -p grpc --bin grpc --locked
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest

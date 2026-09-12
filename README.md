@@ -8,7 +8,7 @@ The repository contains a Next.js marketplace, Rust edge and backend services, a
 
 A seller creates a forward or reverse auction, then an administrator reviews it and sets its final schedule. Buyers discover scheduled auctions in the marketplace and register before the deadline, five minutes before the scheduled start. A registered participant receives a short-lived, one-use socket ticket through Gateway Keeper when the auction becomes live.
 
-Each bid is validated, written to Kafka using the auction ID as its key, and processed in order by that auction's engine actor. Redis atomically stores the live rank and bid state, and Socket.IO broadcasts accepted changes to the auction room. Kafka consumers persist the complete decision audit trail and, after close, finalize operational bids and the winner in PostgreSQL. Dashboard and history data come from the HTTP service; search is routed through Gateway Keeper to the search service and Elasticsearch.
+Each bid is validated and written to Kafka using the auction ID as its key. Two independent consumer groups receive that input: the auction engine processes bids in order and updates Redis live state, while the request audit consumer archives the original bids in PostgreSQL. Each group retries and advances its own offsets independently. Socket.IO broadcasts live changes to the auction room. Additional Kafka consumers persist the accepted/rejected decision audit trail and, after close, finalize operational bids and the winner in PostgreSQL. Dashboard and history data come from the HTTP service; search is routed through Gateway Keeper to the search service and Elasticsearch.
 
 This separation keeps the interactive path fast while retaining a replayable event log, a real-time state store, and durable records for history and audit.
 
@@ -33,6 +33,8 @@ flowchart LR
 
   S -->|validated bid| I[gRPC ingestion]:::service
   I -->|key = auction_id| K[(Kafka: auction-bids)]:::event
+  K -->|independent group + retries| RAW[bid request audit consumer]:::ops
+  RAW -->|append original request| PG[(PostgreSQL)]:::data
   K --> P0[partition 0 worker]:::event
   K --> P1[partition 1 worker]:::event
   P0 --> AR1[engine pod A: DashMap actor registry]:::actor
@@ -51,7 +53,7 @@ flowchart LR
   A2 -->|every decision| DT
   A3 -->|every decision| DT
   DT --> AW[bid audit consumer]:::ops
-  AW -->|append-only decision| PG[(PostgreSQL)]:::data
+  AW -->|append-only decision| PG
 
   A1 -->|bid notification| NT[(auction-notifications)]:::event
   A2 -->|bid notification| NT
@@ -74,6 +76,8 @@ flowchart LR
 
 Kafka is intentionally behind gRPC ingestion, not Gateway Keeper. Gateway Keeper owns public authentication, throttling, circuit breaking, HTTP proxying, and WebSocket upgrades. The ingestion service owns bid-envelope validation and the broker acknowledgement returned to the socket service.
 
+The Socket.IO `place_bid` handler makes no Redis calls. It checks the JWT identity, participation, auction window, and token expiry captured when the socket joined, then forwards to gRPC. A bid cannot change the joined auction or authenticated bidder. Redis is still used for socket initialization, snapshots, the room adapter, and downstream live-state processing. Existing authorized connections can submit while the engine's Redis sink is unavailable; new connections still require Redis to initialize. Participation is fixed for the socket session; reconnect to refresh it.
+
 ### Service responsibilities
 
 | Component | Responsibility | Scaling boundary |
@@ -88,13 +92,15 @@ Kafka is intentionally behind gRPC ingestion, not Gateway Keeper. Gateway Keeper
 | Kafka | Durable ordered bid log, notification/sync work, replay, and consumer-group assignment | Partition count limits useful consumer parallelism |
 | Auction engine | Runs one sequential Kafka worker per assigned partition and one supervised actor per active auction | Add consumers up to the bid-topic partition count |
 | Scheduler | Hydrates due auction configuration and participant data from PostgreSQL into Redis | Database-safe claiming coordinates replicas |
-| Notification/audit/sync worker | Continuously archives every decision, sends notifications, finalizes operational bids/winners, and sweeps missed closes | Separate Kafka consumer groups and topic partitions |
+| Notification/audit/sync worker | Independently archives raw bid requests and processed decisions, sends notifications, finalizes operational bids/winners, and sweeps missed closes | Separate Kafka consumer groups and topic partitions |
 
 ## Kafka ordering and failover
 
 `auction-bids` has a fixed partition count. Every producer uses `auction_id` as the Kafka record key, so Kafka’s partitioner always maps one auction to one partition. Kafka preserves record order inside that partition.
 
 Each auction-engine process joins the `auction-engine` consumer group. Within a process, records are dispatched to one bounded sequential worker per Kafka partition. That worker sends the record to the correct per-auction actor and does not commit the Kafka offset until the actor and Redis ledger return success. Different partitions and different auction actors still run concurrently.
+
+The `auction-bid-request-audit-worker` group independently subscribes to the same `auction-bids` topic. A Redis/engine failure does not block request auditing, and a PostgreSQL audit failure does not block engine consumption. The audit consumer retries the same record with exponential backoff capped at 30 seconds and commits only after an idempotent database insert succeeds. Malformed records must be acknowledged by the DLQ producer before their source offsets advance. Consumer retries stay within the affected group rather than republishing user bids to a Redis request queue.
 
 When an engine pod stops:
 
@@ -109,7 +115,7 @@ The default topology is:
 
 | Topic | Partitions | Retention | Key / consumer group |
 | --- | ---: | ---: | --- |
-| `auction-bids` | 32 in Kubernetes, 16 locally | 30 days | `auction_id` / `auction-engine` |
+| `auction-bids` | 32 in Kubernetes, 16 locally | 30 days | `auction_id` / independent `auction-engine` and `auction-bid-request-audit-worker` groups |
 | `auction-bid-decisions` | 8 in Kubernetes, 4 locally | 90 days | `auction_id` / `auction-bid-audit-worker` |
 | `auction-notifications` | 8 in Kubernetes, 4 locally | 7 days | auction or email / `auction-notification-worker` |
 | `auction-sync` | 8 in Kubernetes, 4 locally | 30 days | `auction_id` / `auction-sync-worker` |
@@ -131,6 +137,10 @@ Backpressure is bounded at two levels:
 A single extremely hot auction remains intentionally sequential. Adding partitions and engine pods raises aggregate throughput across auctions; it does not make one auction multi-writer. If one auction exceeds one actor’s capacity, use a dedicated sequenced partition and deterministic reducer rather than allowing concurrent price writers.
 
 ## Ledger, auditing, and idempotency
+
+The append-only `bid_request_audit_events` table stores raw Kafka requests before any engine decision is required, including the original payload and Kafka topic/partition/offset. Its primary key is the Kafka position: redelivery is idempotent, while a client submitting the same request ID again at a different offset remains visible in the request history. This archive does not classify acceptance or rejection; `bid_audit_events` continues to record the engine's decisions. Request auditing can therefore continue even while Redis-backed decision processing is retrying.
+
+Before deploying the updated notification worker, apply the `20260912000000_create_bid_request_audit_events` Diesel migration (`cd packages/db && diesel migration run`). The new consumer group starts at the earliest retained bid offset. No new Kafka topic is required. The existing `/api/auction/{auction_id}/audit` endpoint continues to serve processed decisions.
 
 Each bid carries a UUID request ID. For an accepted bid, the actor executes one Redis Lua script that atomically:
 

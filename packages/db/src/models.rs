@@ -226,6 +226,21 @@ pub struct NewBidAuditEvent {
     pub source_offset: i64,
 }
 
+#[derive(Insertable, Clone, Debug)]
+#[diesel(table_name = crate::schema::bid_request_audit_events)]
+pub struct NewBidRequestAuditEvent {
+    pub source_topic: String,
+    pub source_partition: i32,
+    pub source_offset: i64,
+    pub request_id: Uuid,
+    pub auction_id: Uuid,
+    pub bidder_id: Uuid,
+    pub username: Option<String>,
+    pub amount: f64,
+    pub submitted_at: NaiveDateTime,
+    pub payload: String,
+}
+
 #[derive(Queryable, Selectable, Identifiable, Associations, Serialize, Deserialize, Debug)]
 #[diesel(belongs_to(Auction, foreign_key = auction_id))]
 #[diesel(table_name = crate::schema::media)]

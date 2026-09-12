@@ -21,7 +21,6 @@ struct AppState {
 #[derive(Deserialize, Debug)]
 struct Auth {
     auction_id: String,
-    user_id: Option<String>,
     token: Option<String>,
 }
 
@@ -38,7 +37,6 @@ struct InboundBid {
     bidder_id: String,
     username: Option<String>,
     amount: f64,
-    timestamp: i64,
     request_id: Option<String>,
 }
 
@@ -47,8 +45,6 @@ async fn on_connect<A: Adapter>(
     auth_data: Data<serde_json::Value>,
     state: State<Arc<AppState>>,
 ) {
-    println!("Incoming connection auth payload: {:?}", auth_data.0);
-
     let auth: Auth = match serde_json::from_value(auth_data.0.clone()) {
         Ok(a) => a,
         Err(e) => {
@@ -90,7 +86,8 @@ async fn on_connect<A: Adapter>(
         }
     }
 
-    let mut user_id_str = auth.user_id.unwrap_or_default();
+    let mut user_id_str = String::new();
+    let mut token_expires_at_ms = 0_i64;
 
     if let Some(token) = auth.token
         && !token.is_empty()
@@ -103,6 +100,9 @@ async fn on_connect<A: Adapter>(
             &jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256),
         ) {
             user_id_str = token_data.claims.sub;
+            token_expires_at_ms = i64::try_from(token_data.claims.exp)
+                .unwrap_or(0)
+                .saturating_mul(1_000);
         } else {
             println!("[ws-server] Invalid or expired JWT token provided in connection payload");
         }
@@ -245,101 +245,91 @@ async fn on_connect<A: Adapter>(
         }
     }
 
-    // 3. Handle incoming bids
+    drop(redis_conn);
+    let bid_session = auth::BidSession {
+        auction_id: auction_id.clone(),
+        user_id: user_id_str,
+        token_expires_at_ms,
+        is_participant,
+        is_completed: validation.is_completed,
+        starts_at_ms: validation.auction_start_time_ms,
+        ends_at_ms: validation.auction_end_time_ms,
+    };
+
+    // 3. Send bids to Kafka through gRPC. Redis is only used at connection
+    // initialization and by downstream consumers, never for bid requests.
     socket.on(
         "place_bid",
-        |_s: SocketRef<A>, Data::<InboundBid>(inbound), state: State<Arc<AppState>>| async move {
-            let mut redis_conn = match state.redis_pool.get().await {
-                Ok(c) => c,
-                Err(_) => return,
-            };
-
-            // Validate Auction State Exists
-            let validation =
-                match auth::validate_auction_state(&mut *redis_conn, &inbound.auction_id).await {
-                    Ok(v) => v,
-                    Err(e) => {
-                        let _ = _s.emit("error", &e);
-                        return;
-                    }
-                };
-
-            // Validate Participant — Ok(false) means not a participant, Ok(true) means allowed
-            let is_participant = match auth::validate_participant(
-                &mut *redis_conn,
-                &inbound.auction_id,
-                &inbound.bidder_id,
-            )
-            .await
-            {
-                Ok(is_participant) => is_participant,
-                Err(e) => {
-                    let _ = _s.emit("error", &e);
+        move |_s: SocketRef<A>, Data::<InboundBid>(inbound), state: State<Arc<AppState>>| {
+            let bid_session = bid_session.clone();
+            async move {
+                if let Err(error) = bid_session.authorize(
+                    &inbound.auction_id,
+                    &inbound.bidder_id,
+                    chrono::Utc::now().timestamp_millis(),
+                ) {
+                    let _ = _s.emit("error", error);
                     return;
                 }
-            };
 
-            if let Err(error) = auth::authorize_bid(&validation, is_participant) {
-                let _ = _s.emit("error", error);
-                return;
-            }
-
-            if let Ok(mut client) = grpc_client::connect(state.grpc_url.clone()).await {
-                let bid_req = grpc_client::bid::PlaceBidRequest {
-                    auction_id: inbound.auction_id.clone(),
-                    user_id: inbound.bidder_id.clone(),
-                    username: inbound.username.unwrap_or_default(),
-                    bid: inbound.amount,
-                    bid_time: inbound.timestamp,
-                    request_id: inbound
-                        .request_id
-                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
-                };
-                let request = tonic::Request::new(bid_req);
-                match client.place_bid(request).await {
-                    Ok(resp) => {
-                        let response = resp.into_inner();
-                        println!(
-                            "[ws-server] Successfully forwarded bid to gRPC. Status: {}, Error: {}",
-                            response.state, response.error
-                        );
-                        if !response.successful {
-                            // If gRPC rejected the bid, immediately notify the user
-                            let _ = _s.emit("error", &format!("Bid rejected: {}", response.error));
-                        } else {
-                            // Let the bidder know their bid is successfully queued in the pipeline!
+                if let Ok(mut client) = grpc_client::connect(state.grpc_url.clone()).await {
+                    let bid_req = grpc_client::bid::PlaceBidRequest {
+                        auction_id: inbound.auction_id.clone(),
+                        user_id: inbound.bidder_id.clone(),
+                        username: inbound.username.unwrap_or_default(),
+                        bid: inbound.amount,
+                        bid_time: chrono::Utc::now().timestamp_millis(),
+                        request_id: inbound
+                            .request_id
+                            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                    };
+                    let request = tonic::Request::new(bid_req);
+                    match client.place_bid(request).await {
+                        Ok(resp) => {
+                            let response = resp.into_inner();
+                            println!(
+                                "[ws-server] Successfully forwarded bid to gRPC. Status: {}, Error: {}",
+                                response.state, response.error
+                            );
+                            if !response.successful {
+                                // If gRPC rejected the bid, immediately notify the user
+                                let _ = _s.emit("error", &format!("Bid rejected: {}", response.error));
+                            } else {
+                                // Let the bidder know their bid is successfully queued in the pipeline!
+                                let _ = _s.emit(
+                                    "info",
+                                    &format!(
+                                        "Bid of {} is queued and being processed...",
+                                        inbound.amount
+                                    ),
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            auction_observability::report_error(
+                                "ws-server",
+                                "grpc_bid_forward",
+                                e.to_string(),
+                                serde_json::json!({
+                                    "auction_id": inbound.auction_id,
+                                    "bidder_id": inbound.bidder_id,
+                                }),
+                            );
                             let _ = _s.emit(
-                                "info",
-                                &format!(
-                                    "Bid of {} is queued and being processed...",
-                                    inbound.amount
-                                ),
+                                "error",
+                                &"Failed to contact gRPC publisher pipeline.".to_string(),
                             );
                         }
                     }
-                    Err(e) => {
-                        auction_observability::report_error(
-                            "ws-server",
-                            "grpc_bid_forward",
-                            e.to_string(),
-                            serde_json::json!({
-                                "auction_id": inbound.auction_id,
-                                "bidder_id": inbound.bidder_id,
-                            }),
-                        );
-                        let _ = _s.emit(
-                            "error",
-                            &"Failed to contact gRPC publisher pipeline.".to_string(),
-                        );
-                    }
+                } else {
+                    auction_observability::report_error(
+                        "ws-server",
+                        "grpc_connect",
+                        "failed to connect to gRPC bid ingestion",
+                        serde_json::json!({"grpc_url": state.grpc_url.clone()}),
+                    );
+                    let _ = _s.emit("error", "Failed to contact gRPC publisher pipeline.");
                 }
-            } else {
-                auction_observability::report_error(
-                    "ws-server",
-                    "grpc_connect",
-                    "failed to connect to gRPC bid ingestion",
-                    serde_json::json!({"grpc_url": state.grpc_url.clone()}),
-                );
             }
         },
     );

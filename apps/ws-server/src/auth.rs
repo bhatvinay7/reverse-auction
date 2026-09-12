@@ -35,6 +35,45 @@ pub struct AuctionValidationResult {
     pub winner_data: Option<Value>,
 }
 
+/// Connection-time authorization for the Kafka ingestion path. No per-bid
+/// Redis lookup is needed; the auction engine owns live-state processing.
+#[derive(Clone)]
+pub struct BidSession {
+    pub auction_id: String,
+    pub user_id: String,
+    pub token_expires_at_ms: i64,
+    pub is_participant: bool,
+    pub is_completed: bool,
+    pub starts_at_ms: i64,
+    pub ends_at_ms: i64,
+}
+
+impl BidSession {
+    pub fn authorize(
+        &self,
+        auction_id: &str,
+        bidder_id: &str,
+        now_ms: i64,
+    ) -> Result<(), &'static str> {
+        if self.user_id.is_empty() || now_ms >= self.token_expires_at_ms {
+            return Err("Authentication expired. Reconnect before bidding.");
+        }
+        if auction_id != self.auction_id || bidder_id != self.user_id {
+            return Err("Bid identity does not match this auction connection.");
+        }
+        if !self.is_participant {
+            return Err("You are not a participant in this auction.");
+        }
+        if self.is_completed || self.ends_at_ms <= 0 || now_ms >= self.ends_at_ms {
+            return Err("Auction has ended.");
+        }
+        if now_ms < self.starts_at_ms {
+            return Err("Auction has not started.");
+        }
+        Ok(())
+    }
+}
+
 pub async fn validate_participant<C: redis::AsyncCommands>(
     redis_conn: &mut C,
     auction_id: &str,

@@ -23,6 +23,22 @@ pub mod sql_types {
 }
 
 diesel::table! {
+    bid_request_audit_events (source_topic, source_partition, source_offset) {
+        source_topic -> Varchar,
+        source_partition -> Int4,
+        source_offset -> Int8,
+        request_id -> Uuid,
+        auction_id -> Uuid,
+        bidder_id -> Uuid,
+        username -> Nullable<Varchar>,
+        amount -> Float8,
+        submitted_at -> Timestamp,
+        payload -> Text,
+        archived_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     auction_listing_status_history (id) {
         id -> Uuid,
         listing_id -> Uuid,
@@ -236,6 +252,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     auction_schedules,
     auctions,
     bid_audit_events,
+    bid_request_audit_events,
     bids,
     media,
     users,

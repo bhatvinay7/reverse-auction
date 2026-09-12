@@ -30,10 +30,10 @@ pub async fn write_bid(
     is_executed: bool,
     previous_price: f64,
     pool: &bb8::Pool<bb8_redis::RedisConnectionManager>,
-    producer: &FutureProducer,
 ) -> Result<LedgerWrite, String> {
     let auction_id = task.bid.auction_id.to_string();
     let dedupe_key = format!("{{{auction_id}}}:processed:{}", task.request_id);
+    let pending_stream_key = format!("{{{auction_id}}}:pending_kafka_events");
     let payload = json!({
         "schema_version": 1,
         "event_type": "bid_decision",
@@ -67,27 +67,24 @@ pub async fn write_bid(
             .map_err(|error| error.to_string())?;
         drop(connection);
         if let Some(accepted_decision) = accepted_decision {
-            auction_kafka::publish(
-                producer,
-                auction_kafka::BID_DECISION_TOPIC,
-                &auction_id,
-                accepted_decision.as_bytes(),
-            )
-            .await
-            .map_err(|error| format!("bid audit replay publish failed: {error}"))?;
+            let mut connection = pool.get().await.map_err(|error| error.to_string())?;
+            let _: () = connection
+                .xadd(
+                    &pending_stream_key,
+                    "*",
+                    &[("payload", accepted_decision.as_str())],
+                )
+                .await
+                .map_err(|error| format!("failed to queue audit replay: {error}"))?;
             return Ok(LedgerWrite::Duplicate);
         }
 
-        auction_kafka::publish(
-            producer,
-            auction_kafka::BID_DECISION_TOPIC,
-            &auction_id,
-            payload_json.as_bytes(),
-        )
-        .await
-        .map_err(|error| format!("bid audit publish failed: {error}"))?;
+        let mut connection = pool.get().await.map_err(|error| error.to_string())?;
+        let _: () = connection
+            .xadd(&pending_stream_key, "*", &[("payload", payload_json.as_str())])
+            .await
+            .map_err(|error| format!("failed to queue audit publish: {error}"))?;
 
-        publish_notification(task, auction_type, false, &auction_id, producer).await;
         publish_live_update(pool, task, &auction_id, &payload).await;
         return Ok(LedgerWrite::Applied);
     }
@@ -102,15 +99,17 @@ pub async fn write_bid(
         redis.call('XADD', KEYS[3], '*', 'bid_data', ARGV[1])
         redis.call('ZADD', KEYS[4], ARGV[2], ARGV[1])
         redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[3])
+        redis.call('XADD', KEYS[5], '*', 'payload', ARGV[1])
         return {1, ARGV[1]}
         "#,
     );
     let mut connection = pool.get().await.map_err(|error| error.to_string())?;
-    let (applied, stored_payload): (i32, String) = script
+    let (applied, _stored_payload): (i32, String) = script
         .key(&dedupe_key)
         .key(auction_redis::format_sync_stream(&auction_id))
         .key(auction_redis::format_live_stream(&auction_id))
         .key(auction_redis::format_zset_key(&auction_id))
+        .key(&pending_stream_key)
         .arg(&payload_json)
         .arg(task.bid.amount)
         .arg(DEDUPE_TTL_SECS)
@@ -119,66 +118,15 @@ pub async fn write_bid(
         .map_err(|error| error.to_string())?;
     drop(connection);
 
-    // This publish is part of bid processing, not a best-effort notification.
-    // If it fails, the source Kafka offset remains uncommitted. On retry the
-    // Redis idempotency record returns this exact payload, so the bid is not
-    // recalculated or applied twice.
-    auction_kafka::publish(
-        producer,
-        auction_kafka::BID_DECISION_TOPIC,
-        &auction_id,
-        stored_payload.as_bytes(),
-    )
-    .await
-    .map_err(|error| format!("bid audit publish failed: {error}"))?;
-
     if applied == 0 {
         return Ok(LedgerWrite::Duplicate);
     }
 
-    publish_notification(task, auction_type, true, &auction_id, producer).await;
     publish_live_update(pool, task, &auction_id, &payload).await;
     Ok(LedgerWrite::Applied)
 }
 
-async fn publish_notification(
-    task: &AuctionTask,
-    auction_type: AuctionType,
-    is_executed: bool,
-    auction_id: &str,
-    producer: &FutureProducer,
-) {
-    let notification = json!({
-        "request_id": task.request_id,
-        "event_type": "bid_placed",
-        "auction_id": auction_id,
-        "auction_type": auction_type,
-        "bidder_id": task.bid.bidder_id,
-        "amount": task.bid.amount,
-        "is_executed": is_executed,
-        "timestamp": task.bid.timestamp,
-        "message": if is_executed { "A valid bid was placed." } else { "A bid was rejected because it did not improve the current price." },
-    })
-    .to_string();
-    if let Err(error) = auction_kafka::publish(
-        producer,
-        auction_kafka::NOTIFICATION_TOPIC,
-        auction_id,
-        notification.as_bytes(),
-    )
-    .await
-    {
-        auction_observability::report_error(
-            "auction-engine",
-            "notification_publish",
-            error,
-            json!({
-                "auction_id": auction_id,
-                "request_id": task.request_id,
-            }),
-        );
-    }
-}
+
 
 async fn publish_live_update(
     pool: &bb8::Pool<bb8_redis::RedisConnectionManager>,

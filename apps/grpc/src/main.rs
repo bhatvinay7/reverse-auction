@@ -39,8 +39,8 @@ impl IngestionState {
         if req.user_id.is_empty() {
             return Err("User ID cannot be empty".to_string());
         }
-        if req.bid <= 0.0 {
-            return Err("Bid amount must be greater than zero".to_string());
+        if !req.bid.is_finite() || req.bid <= 0.0 {
+            return Err("Bid amount must be finite and greater than zero".to_string());
         }
         let auction_uuid = Uuid::parse_str(&req.auction_id)
             .map_err(|e| format!("Invalid auction UUID format: {}", e))?;
@@ -88,7 +88,7 @@ impl IngestionState {
         auction_kafka::publish(
             &self.kafka_producer,
             auction_kafka::BID_TOPIC,
-            &req.auction_id,
+            &auction_uuid.to_string(),
             &payload_bytes,
         )
         .await
@@ -279,6 +279,75 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn ingestion_appends_to_kafka_without_redis() {
+        use rdkafka::{
+            ClientConfig, Message, Offset, TopicPartitionList,
+            consumer::{Consumer, StreamConsumer},
+            mocking::MockCluster,
+        };
+        use std::time::Duration;
+
+        let cluster = MockCluster::new(1).unwrap();
+        cluster
+            .create_topic(auction_kafka::BID_TOPIC, 1, 1)
+            .unwrap();
+        let producer: FutureProducer = ClientConfig::new()
+            .set("bootstrap.servers", cluster.bootstrap_servers())
+            .create()
+            .unwrap();
+        let state = IngestionState {
+            kafka_producer: producer,
+        };
+        let auction_id = Uuid::new_v4();
+        let mut request = PlaceBidRequest {
+            auction_id: auction_id.to_string().to_uppercase(),
+            user_id: Uuid::new_v4().to_string(),
+            username: "bidder".into(),
+            bid: 100.0,
+            bid_time: 1_700_000_000,
+            request_id: Uuid::new_v4().to_string(),
+        };
+        state.publish_bid(&request).await.unwrap();
+
+        let consumer: StreamConsumer = ClientConfig::new()
+            .set("bootstrap.servers", cluster.bootstrap_servers())
+            .set("group.id", "ingestion-test")
+            .set("enable.auto.commit", "false")
+            .create()
+            .unwrap();
+        let mut assignment = TopicPartitionList::new();
+        assignment
+            .add_partition_offset(auction_kafka::BID_TOPIC, 0, Offset::Beginning)
+            .unwrap();
+        consumer.assign(&assignment).unwrap();
+        let message = tokio::time::timeout(Duration::from_secs(5), consumer.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            message.key_view::<str>().unwrap().unwrap(),
+            auction_id.to_string()
+        );
+        let payload: serde_json::Value =
+            serde_json::from_slice(message.payload().unwrap()).unwrap();
+        assert_eq!(payload["request_id"], request.request_id);
+        assert_eq!(payload["bidder_id"], request.user_id);
+        assert_eq!(payload["amount"], 100.0);
+        assert_eq!(payload["timestamp"], 1_700_000_000_000_i64);
+
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.0] {
+            request.bid = invalid;
+            assert!(
+                state
+                    .publish_bid(&request)
+                    .await
+                    .unwrap_err()
+                    .contains("finite and greater")
+            );
+        }
+    }
 
     #[test]
     fn test_bid_request_payload_sanity() {

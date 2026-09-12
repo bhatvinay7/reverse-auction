@@ -19,6 +19,7 @@ pub const CDC_AUCTIONS_TOPIC: &str = "cdc-auctions";
 pub const CDC_AUCTION_LISTINGS_TOPIC: &str = "cdc-auction-listings";
 
 pub const ENGINE_GROUP: &str = "auction-engine";
+pub const BID_REQUEST_AUDIT_GROUP: &str = "auction-bid-request-audit-worker";
 pub const BID_AUDIT_GROUP: &str = "auction-bid-audit-worker";
 pub const NOTIFICATION_GROUP: &str = "auction-notification-worker";
 pub const SYNC_GROUP: &str = "auction-sync-worker";

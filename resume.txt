@@ -1,0 +1,189 @@
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\usepackage{fontawesome5}
+\input{glyphtounicode}
+
+% Font options
+\usepackage{charter}
+
+\pagestyle{fancy}
+\fancyhf{} % clear all header and footer fields
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Adjust margins
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+% Ensure that generate pdf is machine readable/ATS parsable
+\pdfgentounicode=1
+
+%-------------------------
+% Custom commands
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-2pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small#1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & #2 \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+%-------------------------------------------
+%%%%%%  RESUME STARTS HERE  %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+
+\begin{center}
+    \textbf{\Huge \scshape Vinay Bhat} \\ \vspace{5pt}
+    \small Software Engineer --- Backend $\bullet$ Distributed Systems $\bullet$ Event-Driven Architecture \\
+    \vspace{2pt}
+    \href{https://github.com/bhatvinay7}{\underline{GitHub}} $|$
+    \href{https://web.vinaybhat.xyz}{\underline{Portfolio}} $|$
+    \href{mailto:bhatvinay74@gmail.com}{\underline{bhatvinay74@gmail.com}} $|$
+    \href{https://www.linkedin.com/in/vinay-bhat-2416892aa}{\underline{LinkedIn}} $|$
+    9483860289
+\end{center}
+
+\section{Technical Summary}
+Performance-driven Backend Engineer specializing in architecting high-throughput, event-driven systems that solve complex concurrency and scaling challenges. From designing low-latency Rust microservices to orchestrating distributed queue processing and real-time WebSockets, I build resilient, transaction-safe architectures capable of sustaining rigorous operational loads.
+
+\section{Technical Skills}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     \textbf{Languages}{: Rust, TypeScript, JavaScript} \\
+     \textbf{Backend}{: Axum Web, Node.js, Next.js, gRPC, WebSockets, REST APIs} \\
+     \textbf{Data \& Messaging}{: PostgreSQL, Redis, Redis Streams, RabbitMQ, Kafka, MongoDB, Elasticsearch} \\
+     \textbf{Systems}{: Event-driven architecture, asynchronous processing, concurrency, worker-based processing, distributed locking, idempotency, transactional consistency, scheduling} \\
+     \textbf{Infrastructure}{: Docker, Kubernetes, Argo CD, GitOps} \\
+    }}
+ \end{itemize}
+
+\section{Experience}
+  \resumeSubHeadingListStart
+
+    \resumeSubheading
+      {Boomlex Technology Private Limited}{Feb 2026 -- Jul 2026}
+      {Software Engineer Intern}{Remote}
+      \resumeItemListStart
+        \resumeItem{Worked on a social media business application, architecting event-driven Node microservices for asynchronous event ingestion and responsive user interactions.}
+        \resumeItem{Integrated payment gateway workflows and a caching layer for user interactions, applying database tuning and strict transaction constraints to prevent race conditions during concurrent updates.}
+        \resumeItem{Integrated Prometheus and Grafana observability to monitor worker queues, keeping p99 application latency consistently under 50 ms.}
+        \resumeItem{Orchestrated CI/CD pipelines and Kubernetes infrastructure, incorporating rigorous automated testing strategies to support zero-downtime, scalable deployments.}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {Bhist Enterprises}{Dec 2025 -- Feb 2026}
+      {Software Engineer Intern}{Remote}
+      \resumeItemListStart
+        \resumeItem{Developed highly concurrent Rust backend microservices for a social media dating application, including region-based user-feed generation and geographic coverage.}
+        \resumeItem{Implemented WebSocket-based real-time communication and automated snapshot recovery for feed and user-interaction updates, reliably supporting over 5,000 concurrent client connections.}
+        \resumeItem{Optimized backend APIs and database access patterns through strategic query tuning, driving sub-millisecond retrieval times and improving overall fault tolerance.}
+        \resumeItem{Designed scalable worker-based processing systems to offload synchronous request handling to background asynchronous workflows, maximizing resource utilization.}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {Roman Technologies}{Jan 2025 -- Jun 2025}
+      {Software Engineer Intern}{Remote}
+      \resumeItemListStart
+        \resumeItem{Engineered transactional backend services for financial accounting, utilizing relational databases to ensure strict data consistency across millions of monthly transactions.}
+        \resumeItem{Developed RESTful APIs and asynchronous data pipelines to power data-intensive dashboards, maintaining low-latency data access under heavy load.}
+        \resumeItem{Structured full-stack architectures prioritizing backend concurrency, event-driven communication, and robust error handling to support rapid scaling.}
+        \resumeItem{Established comprehensive open-source documentation, developer tooling, and end-to-end testing strategies to streamline team onboarding and infrastructure deployments.}
+      \resumeItemListEnd
+
+  \resumeSubHeadingListEnd
+
+\section{Projects}
+  \resumeSubHeadingListStart
+    \resumeProjectHeading
+      {\textbf{Chess} $|$ \emph{Rust, Node.js, Next.js, PostgreSQL, Redis, RabbitMQ, WebSockets} $|$ \href{https://github.com/bhatvinay7/chess-1}{\faGithub\ GitHub}}{}
+      \resumeItemListStart
+        \resumeItem{Designed queue-based matchmaking around Redis Streams and Consumer Groups, allowing isolated Rust Actix actors to process player pairing through a producer-consumer architecture.}
+        \resumeItem{Implemented Elo-based matchmaking using a BTreeMap for efficient rating-gap expansion while maintaining player-presence validation during asynchronous pairing.}
+        \resumeItem{Built a zero-polling tournament scheduler using Change Data Capture (CDC) to tail PostgreSQL WAL, dispatching delayed jobs to a two-phase Redis ZSET queue.}
+        \resumeItem{Architected a scalable gRPC game server and WebSocket gateway to minimize internal network latency, leveraging Redis Pub/Sub for high-throughput spectator broadcasting.}
+        \resumeItem{Developed Swiss-style and Round-Robin tournament pairing algorithms integrated with asynchronous worker pipelines to advance competition states.}
+      \resumeItemListEnd
+
+    \resumeProjectHeading
+      {\textbf{Bookit} $|$ \emph{Rust, Node.js, Next.js, PostgreSQL, Redis, MongoDB, RabbitMQ} $|$ \href{https://github.com/bhatvinay7/bookit}{\faGithub\ GitHub}}{}
+      \resumeItemListStart
+        \resumeItem{Architected a distributed booking platform, utilizing a gateway for HTTP/gRPC edge routing, rate limiting, and circuit breaking to manage synchronous traffic.}
+        \resumeItem{Enforced reservation locking and transactional consistency by coordinating Redis Lua scripts with PostgreSQL transactions, preventing conflicting concurrent allocations.}
+        \resumeItem{Implemented an event-driven outbox pattern, pushing transactional database changes to a RabbitMQ consumer to guarantee at-least-once payment processing and idempotency.}
+        \resumeItem{Developed a Change Data Capture (CDC) worker to propagate MongoDB updates through Redis Streams for near real-time Elasticsearch synchronization.}
+      \resumeItemListEnd
+
+    \resumeProjectHeading
+      {\textbf{AquaBid} $|$ \emph{Rust, Next.js, PostgreSQL, Redis, Kafka} $|$ \href{https://github.com/bhatvinay7/auction}{\faGithub\ GitHub}}{}
+      \resumeItemListStart
+        \resumeItem{Designed a concurrent auction engine using a Rust DashMap actor registry and MPSC channels, tuning 64-byte cache-line alignment to eliminate false sharing during sequential bid processing.}
+        \resumeItem{Engineered an idempotent gRPC ingestion pipeline that durably appends bids to a Kafka event log, decoupling request validation from asynchronous backend processing.}
+        \resumeItem{Enforced strict transactional consistency by committing Kafka consumer offsets only after PostgreSQL successfully acknowledged the idempotent insert of the bid decision.}
+        \resumeItem{Structured real-time WebSocket room fan-out for auction state updates using Redis Pub/Sub, isolating high-throughput live state from the permanent PostgreSQL ledger.}
+      \resumeItemListEnd
+  \resumeSubHeadingListEnd
+
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {Nagarjuna College of Engineering and Technology}{Bengaluru}
+      {B.Tech $|$ CGPI: 8.97}{2021 -- 2025}
+  \resumeSubHeadingListEnd
+
+\end{document}

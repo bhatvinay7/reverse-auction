@@ -3,6 +3,7 @@ use rdkafka::{Message, consumer::StreamConsumer, producer::FutureProducer};
 
 mod email;
 mod kafka;
+mod request_audit;
 mod types;
 
 use crate::types::{BidDecisionPayload, IdRow, NotificationPayload};
@@ -37,6 +38,16 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         auction_kafka::BID_AUDIT_GROUP,
         &[auction_kafka::BID_DECISION_TOPIC],
     )?;
+    let request_audit_consumer = auction_kafka::consumer(
+        auction_kafka::BID_REQUEST_AUDIT_GROUP,
+        &[auction_kafka::BID_TOPIC],
+    )?;
+
+    tokio::spawn(request_audit::run(
+        pool.clone(),
+        request_audit_consumer,
+        producer.clone(),
+    ));
 
     tokio::spawn(run_bid_audit_worker(
         pool.clone(),
