@@ -20,7 +20,11 @@ permissions:
 
 jobs:
   bootstrap:
-    if: inputs.confirm == 'BOOTSTRAP'
+    # Match the application branch, GitHub secrets environment and GitOps branch.
+    if: >-
+      inputs.confirm == 'BOOTSTRAP' &&
+      ((github.ref == 'refs/heads/deployment' && inputs.environment == 'dev') ||
+       (github.ref == 'refs/heads/main' && inputs.environment == 'prod'))
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     env:
