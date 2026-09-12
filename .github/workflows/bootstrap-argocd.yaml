@@ -44,6 +44,15 @@ jobs:
               --version 0.57.9 \
               --namespace monitoring \
               -f - >/dev/null
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install manifest parser
+        run: python3 -m pip install PyYAML==6.0.3
+      - name: Validate deployment images and namespaces
+        shell: bash
+        run: |
+          python3 scripts/validate-monitoring.py --require-images ${{ inputs.environment }}
       - name: Configure kubectl
         env:
           KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
@@ -408,6 +417,10 @@ jobs:
             --wait --timeout=10m
           kubectl wait --for=condition=Established crd/kafkas.kafka.strimzi.io --timeout=5m
           kubectl rollout status deployment/strimzi-cluster-operator -n kafka --timeout=5m
+      - name: Bootstrap Prometheus CRDs and operator
+        shell: bash
+        run: |
+          python3 scripts/bootstrap-monitoring.py infra/overlays/${{ inputs.environment }}
       - name: Deploy GitOps root
         shell: bash
         run: |
