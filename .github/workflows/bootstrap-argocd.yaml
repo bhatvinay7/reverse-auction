@@ -29,6 +29,7 @@ jobs:
     environment: ${{ inputs.environment }}
     env:
       KUBESEAL_VERSION: "0.27.3"
+      ARGOCD_VERSION: "v3.5.2"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -369,14 +370,35 @@ jobs:
         shell: bash
         run: |
           kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+          manifest="$RUNNER_TEMP/argocd-install.yaml"
+          curl -fsSL "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml" -o "$manifest"
+          # Restore service accounts first when recovering a partial installation.
+          python3 - "$manifest" <<'PYACCOUNTS' | kubectl apply --server-side -n argocd -f -
+          import json, sys, yaml
+          with open(sys.argv[1]) as source:
+              accounts = [item for item in yaml.safe_load_all(source)
+                          if item and item.get('kind') == 'ServiceAccount']
+          if not accounts:
+              sys.exit('Argo CD installation manifest has no service accounts')
+          print(json.dumps({'apiVersion': 'v1', 'kind': 'List', 'items': accounts}))
+          PYACCOUNTS
           # Server-side apply avoids storing large CRDs in the last-applied annotation.
           # Bootstrap owns the upstream Argo CD installation fields, including those
           # previously written by kubectl-client-side-apply during earlier installs.
-          kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+          kubectl apply --server-side --force-conflicts -n argocd -f "$manifest"
           kubectl wait --for=condition=Established crd/applications.argoproj.io \
             crd/applicationsets.argoproj.io crd/appprojects.argoproj.io --timeout=5m
-          for deployment in argocd-server argocd-repo-server argocd-applicationset-controller \
-            argocd-notifications-controller argocd-dex-server argocd-redis; do
+          kubectl get serviceaccounts -n argocd argocd-application-controller \
+            argocd-applicationset-controller argocd-dex-server argocd-notifications-controller \
+            argocd-redis argocd-repo-server argocd-server >/dev/null
+          # Redis initializes argocd-redis credentials used by the other components.
+          for deployment in argocd-redis argocd-server argocd-repo-server \
+            argocd-applicationset-controller argocd-notifications-controller argocd-dex-server; do
+            reason=$(kubectl get deployment/"$deployment" -n argocd \
+              -o jsonpath='{.status.conditions[?(@.type=="Progressing")].reason}')
+            if [ "$reason" = ProgressDeadlineExceeded ]; then
+              kubectl rollout restart deployment/"$deployment" -n argocd
+            fi
             kubectl rollout status deployment/"$deployment" -n argocd --timeout=10m
           done
           kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=10m
