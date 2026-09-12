@@ -326,7 +326,7 @@ jobs:
           FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
           ARGOCD_HOST: ${{ secrets.ARGOCD_HOST }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.repository_owner }}
           GRAFANA_HOST: ${{ secrets.GRAFANA_HOST }}
           GRPC_URL: ${{ secrets.GRPC_URL }}
           HTTP_PORT: ${{ secrets.HTTP_PORT }}
